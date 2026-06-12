@@ -12,6 +12,51 @@ import UIKit
 struct ContentViewModelTests {
 
     @MainActor
+    @Test func restoreLastWatchedSelectsStoredPlaylistOnce() async throws {
+        let date = Date(timeIntervalSince1970: 100)
+        let playlist = try await makePlaylistItem(name: "Playlist", date: date, encrypted: false)
+        let database = try makeDatabaseService(items: [playlist])
+        let appSettings = AppSettings()
+        appSettings.lastPlaylistName = "Playlist"
+        appSettings.lastPlaylistDate = date
+        appSettings.lastStreamHmac = "stream-hmac"
+        database.mainContext.insert(appSettings)
+        try database.mainContext.save()
+        Container.shared.databaseService.register { database }
+
+        let viewModel = ContentViewModel()
+        viewModel.restoreLastWatched()
+
+        #expect(viewModel.selectedPlaylist == .init(name: "Playlist", date: date))
+        #expect(viewModel.consumeRestoreStreamHmac() == "stream-hmac")
+        // Consumed once only.
+        #expect(viewModel.consumeRestoreStreamHmac() == nil)
+
+        // A second restore attempt must not override the user's navigation.
+        viewModel.selectedPlaylist = nil
+        viewModel.restoreLastWatched()
+        #expect(viewModel.selectedPlaylist == nil)
+    }
+
+    @MainActor
+    @Test func restoreLastWatchedSkipsDeletedPlaylist() async throws {
+        let database = try makeDatabaseService(items: [])
+        let appSettings = AppSettings()
+        appSettings.lastPlaylistName = "Gone"
+        appSettings.lastPlaylistDate = Date(timeIntervalSince1970: 100)
+        appSettings.lastStreamHmac = "stream-hmac"
+        database.mainContext.insert(appSettings)
+        try database.mainContext.save()
+        Container.shared.databaseService.register { database }
+
+        let viewModel = ContentViewModel()
+        viewModel.restoreLastWatched()
+
+        #expect(viewModel.selectedPlaylist == nil)
+        #expect(viewModel.consumeRestoreStreamHmac() == nil)
+    }
+
+    @MainActor
     @Test func onPlaylistSelectedStoresRestoredContentAndClearsSelectedStream() async throws {
         let date = Date(timeIntervalSince1970: 100)
         let playlist = try await makePlaylistItem(

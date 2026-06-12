@@ -204,7 +204,31 @@ final class PlaylistViewModel {
             settings.views[hmac, default: 0] += 1
             settings.recent[hmac] = Date()
             settings.encrypted[hmac] = encrypted
+            saveLastWatched(hmac: hmac)
         }
+    }
+
+    func stream(matchingLastWatched hmac: String) -> PlaylistParser.Stream? {
+        for group in streams {
+            for stream in group where encode(title: title(for: stream)).hmac == hmac {
+                return stream
+            }
+        }
+        return nil
+    }
+
+    private func saveLastWatched(hmac: String) {
+        let fetch = FetchDescriptor<AppSettings>()
+        let appSettings: AppSettings
+        if let existing = (try? databaseService.mainContext.fetch(fetch))?.first {
+            appSettings = existing
+        } else {
+            appSettings = AppSettings()
+            databaseService.mainContext.insert(appSettings)
+        }
+        appSettings.lastPlaylistName = content.identity.name
+        appSettings.lastPlaylistDate = content.identity.date
+        appSettings.lastStreamHmac = hmac
     }
 
     nonisolated private static func salt(for content: PlaylistItem.Content) -> Data {

@@ -77,6 +77,39 @@ final class ContentViewModel {
         playlistListUpdate = .init()
     }
 
+    @ObservationIgnored private var pendingRestoreStreamHmac: String?
+    @ObservationIgnored private var didAttemptRestore = false
+
+    func restoreLastWatched() {
+        guard !didAttemptRestore else {
+            return
+        }
+        didAttemptRestore = true
+        guard selectedPlaylist == nil else {
+            return
+        }
+        guard let appSettings = try? databaseService.mainContext.fetch(FetchDescriptor<AppSettings>()).first,
+              let name = appSettings.lastPlaylistName,
+              let date = appSettings.lastPlaylistDate else {
+            return
+        }
+        let identity = PlaylistItem.Identity(name: name, date: date)
+        let playlists = (try? databaseService.mainContext.fetch(FetchDescriptor<PlaylistItem>())) ?? []
+        guard playlists.contains(where: { $0.identity == identity }) else {
+            return
+        }
+        logger.info("Restore last watched playlist", private: identity)
+        pendingRestoreStreamHmac = appSettings.lastStreamHmac
+        selectedPlaylist = identity
+    }
+
+    func consumeRestoreStreamHmac() -> String? {
+        defer {
+            pendingRestoreStreamHmac = nil
+        }
+        return pendingRestoreStreamHmac
+    }
+
     func onPlaylistRenamed(_ identity: PlaylistItem.Identity) {
         logger.info("Playlist renamed", private: identity)
         // Re-selecting by the new identity restores fresh content from the

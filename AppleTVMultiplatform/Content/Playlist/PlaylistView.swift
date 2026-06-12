@@ -9,6 +9,7 @@ struct PlaylistView: View {
     @Binding private var selectedStream: PlaylistParser.Stream?
     @State private var viewModel: PlaylistViewModel
     @Binding private var reloadCurrentProgram: UUID
+    private var restoreStreamHmac: () -> String? = { nil }
 #if os(tvOS)
     @Binding private var focusedStream: PlaylistParser.Stream?
     @Binding private var reselectStream: Bool
@@ -19,13 +20,15 @@ struct PlaylistView: View {
         selectedStream: Binding<PlaylistParser.Stream?>,
         focusedStream: Binding<PlaylistParser.Stream?>,
         reselectStream: Binding<Bool>,
-        reloadCurrentProgram: Binding<UUID>
+        reloadCurrentProgram: Binding<UUID>,
+        restoreStreamHmac: @escaping () -> String? = { nil }
     ) {
         _selectedStream = selectedStream
         _focusedStream = focusedStream
         _reselectStream = reselectStream
         _reloadCurrentProgram = reloadCurrentProgram
         _viewModel = State(wrappedValue: PlaylistViewModel(content: content))
+        self.restoreStreamHmac = restoreStreamHmac
     }
 #else
     @State private var showPlaylistSettings: PlaylistItem.Identity?
@@ -38,12 +41,14 @@ struct PlaylistView: View {
         content: PlaylistItem.Content,
         selectedStream: Binding<PlaylistParser.Stream?>,
         reloadCurrentProgram: Binding<UUID>,
-        onIdentityChange: @escaping (PlaylistItem.Identity) -> Void = { _ in }
+        onIdentityChange: @escaping (PlaylistItem.Identity) -> Void = { _ in },
+        restoreStreamHmac: @escaping () -> String? = { nil }
     ) {
         _selectedStream = selectedStream
         _reloadCurrentProgram = reloadCurrentProgram
         _viewModel = State(wrappedValue: PlaylistViewModel(content: content))
         self.onIdentityChange = onIdentityChange
+        self.restoreStreamHmac = restoreStreamHmac
     }
 #endif
 
@@ -102,6 +107,7 @@ struct PlaylistView: View {
         // channel list, which breaks the remote-first select-a-channel flow.
         .task {
             await viewModel.loadStreams()
+            restoreLastWatchedIfNeeded()
         }
         .safeAreaPadding(.trailing, 16)
         .onChange(of: isStreamFocused) {
@@ -141,6 +147,7 @@ struct PlaylistView: View {
         .task(id: onUpdate) {
             await viewModel.loadStreams()
             reloadCurrentProgram = .init()
+            restoreLastWatchedIfNeeded()
         }
     #if os(iOS)
         .searchable(
@@ -212,6 +219,16 @@ struct PlaylistView: View {
         .navigationBarTitleDisplayMode(.inline)
     #endif
 #endif
+    }
+
+    private func restoreLastWatchedIfNeeded() {
+        guard selectedStream == nil,
+              let hmac = restoreStreamHmac(),
+              let stream = viewModel.stream(matchingLastWatched: hmac) else {
+            return
+        }
+        logger.info("Restore last watched stream", private: viewModel.content.id)
+        selectedStream = stream
     }
 
     private func row(for stream: PlaylistParser.Stream) -> some View {

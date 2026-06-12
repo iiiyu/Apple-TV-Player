@@ -309,6 +309,53 @@ struct PlaylistViewModelTests {
         #expect(missing == nil)
     }
 
+    @Test func selectedStreamSavesLastWatchedAndCanBeMatched() async throws {
+        let expectedContent = makeContent()
+        let stream = PlaylistParser.Stream(
+            title: "One",
+            url: "https://example.com/one.m3u8",
+            tvgLogo: nil, tvgID: "1", tvgName: nil, groupTitle: nil
+        )
+        let playlist = makePlaylist(streams: [stream])
+
+        let database = DatabaseService(isStoredInMemoryOnly: true)
+        let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.none.rawValue)
+        let item = PlaylistItem(
+            name: expectedContent.identity.name,
+            date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
+            salt: nil, encrypted: false, settings: settings
+        )
+        database.mainContext.insert(item)
+        try database.mainContext.save()
+        Container.shared.databaseService.register { database }
+
+        let service = MockPlaylistService(
+            result: .success([playlist]),
+            programGuide: .init(
+                channel: .init(id: "1", displayName: "1", iconURL: nil),
+                programs: [
+                    .init(title: "1", start: Date().addingTimeInterval(1000), stop: Date().addingTimeInterval(1200))
+                ]
+            )
+        )
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: expectedContent)
+        await viewModel.loadStreams()
+
+        viewModel.selectedStream(stream)
+
+        let appSettings = try #require(
+            database.mainContext.fetch(FetchDescriptor<AppSettings>()).first
+        )
+        #expect(appSettings.lastPlaylistName == expectedContent.identity.name)
+        #expect(appSettings.lastPlaylistDate == expectedContent.identity.date)
+        let hmac = try #require(appSettings.lastStreamHmac)
+
+        // The stored hmac must resolve back to the same stream.
+        #expect(viewModel.stream(matchingLastWatched: hmac) == stream)
+        #expect(viewModel.stream(matchingLastWatched: "unknown") == nil)
+    }
+
     @Test func streamsNoOrder() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(

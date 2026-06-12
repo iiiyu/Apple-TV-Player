@@ -16,6 +16,9 @@ struct ContentView: View {
 
     var body: some View {
         contentView()
+            .task {
+                viewModel.restoreLastWatched()
+            }
             .sheet(isPresented: $viewModel.isShowingPlaylistAdd) {
                 addPlaylistView()
                     .onDisappear {
@@ -86,7 +89,8 @@ struct ContentView: View {
                         selectedStream: $viewModel.selectedPlaylistStream,
                         focusedStream: $focusedStream,
                         reselectStream: $reselectStream,
-                        reloadCurrentProgram: $reloadCurrentProgram
+                        reloadCurrentProgram: $reloadCurrentProgram,
+                        restoreStreamHmac: { viewModel.consumeRestoreStreamHmac() }
                     )
                     .frame(width: UIScreen.main.bounds.width / 2.8)
                     .padding(32)
@@ -177,7 +181,8 @@ struct ContentView: View {
                 reloadCurrentProgram: $reloadCurrentProgram,
                 onIdentityChange: { identity in
                     viewModel.onPlaylistRenamed(identity)
-                }
+                },
+                restoreStreamHmac: { viewModel.consumeRestoreStreamHmac() }
             )
             .id(content.id)
             .accessibilityIdentifier("content")
