@@ -65,15 +65,6 @@ nonisolated final class LoggerService {
         self.error(error, private: String(describing: `private`), file: file, line: line)
     }
 
-    func errorFirebase(
-        _ error: Swift.Error,
-        `private`: String = "",
-        file: String = #filePath,
-        line: Int = #line
-    ) {
-        //
-    }
-
     // MARK: - Private
 
     private func fileLink(file: String, line: Int) -> String {

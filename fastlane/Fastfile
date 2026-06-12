@@ -2,7 +2,6 @@
 tests_scripts_dir = File.expand_path("../scripts/tests", FastlaneCore::FastlaneFolder.path || Dir.pwd)
 tests_script = ->(name) { File.join(tests_scripts_dir, name) }
 project_dir = File.expand_path("..", __dir__)
-googleservice_info_plist_path=File.join(project_dir, "/AppleTVMultiplatform/Resources/GoogleService-Info.plist")
 
 project="AppleTVMultiplatform.xcodeproj"
 scheme="AppleTVMultiplatform"
@@ -11,9 +10,6 @@ development_signing_certificate="A39AD919F97CB1C610CEB5D26CB688BDFF7D93FE"
 distribution_signing_certificate="B0135C0CCF9DE52F543D1DDF1765E224FEC0DF8E"
 team_id="4HUHB9J47M"
 bundle_id="mike.house.nsk.AppleTVMultiplatform"
-
-# If you want to build the app for yourself, disable this or set your Firebase creds.
-firebase_enabled = true
 
 private_lane :build_app_package do |options|
   xcodes(
@@ -29,7 +25,6 @@ private_lane :build_app_package do |options|
     export_method: options[:export_method],
     export_options: options[:export_options],
     sdk: options[:sdk],
-    xcargs: firebase_enabled ? "SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) FirebaseSupport'" : nil,
     destination: options[:destination],
     skip_codesigning: options[:skip_codesigning].nil? ? false : options[:skip_codesigning]
   )
@@ -110,17 +105,6 @@ private_lane :derived_data_path do
   (sh "xcodebuild -project #{File.join(project_dir, project)} -scheme #{scheme} -showBuildSettings | grep BUILD_ROOT")[/BUILD_ROOT = (.*)\/Build\/Products/, 1]
 end
 
-private_lane :upload_symbols do |options|
-  next unless firebase_enabled
-  ipa = options[:ipa]
-  upload_symbols_to_crashlytics(
-    dsym_path: File.join(File.dirname(ipa), File.basename(ipa, File.extname(ipa)) + ".app.dSYM.zip"),
-    gsp_path: googleservice_info_plist_path,
-    platform: options[:platform],
-    binary_path: File.join(derived_data_path, "SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols")
-  )
-end
-
 private_lane :localized_testflight_app_info do
   descriptions_dir = File.join(project_dir, "fastlane/metadata")
   localized_app_info = Dir.glob(File.join(descriptions_dir, "*/description.txt")).sort.each_with_object({}) do |path, info|
@@ -170,38 +154,6 @@ platform :ios do
     )
   end
 
-  private_lane :build_ad_hoc do
-    export_method = "ad-hoc"
-    profile_path = File.join(project_dir, "/.secrets/iOS-Ad-Hoc-#{bundle_id}.mobileprovision")
-    install_certificate(
-      signing_certificate: distribution_signing_certificate,
-      export_method: export_method
-    )
-    install_provision_profile(
-      profile_path: profile_path
-    )
-    build_ios_package(
-      output_name: "AppleTVMultiplatform-ios-ad-hoc.ipa",
-      export_method: export_method,
-      export_options: generate_export_options(
-        export_method: export_method,
-        profile_path: profile_path
-      )
-    )
-  end
-
-  desc "Builds an iOS ad-hoc release and uploads it to Firebase"
-  lane :make_firebase_release do
-    raise "Firebase is not enabled." unless firebase_enabled
-    ipa = build_ad_hoc
-    firebase_app_distribution(
-      ipa_path: ipa,
-      service_credentials_file: File.join(project_dir, "/.secrets/bro-iptv-player-1009cd4c9b38.json"),
-      groups: "Family"
-    )
-    upload_symbols(ipa: ipa, platform: "ios")
-  end
-
   private_lane :build_distribution do
     export_method = "app-store"
     profile_path = File.join(project_dir, "/.secrets/iOS-Distribution-#{bundle_id}.mobileprovision")
@@ -234,7 +186,6 @@ platform :ios do
       groups: ["Family"],
       submit_beta_review: false
     )
-    upload_symbols(ipa: ipa, platform: "ios")
   end
 
   desc "Upload metadata to the Distribution page on App Store Connect"
@@ -392,7 +343,6 @@ platform :tvos do
       groups: ["Family"],
       submit_beta_review: false
     )
-    upload_symbols(ipa: ipa, platform: "appletvos")
   end
 
   desc "Upload metadata to the Distribution page on App Store Connect"
@@ -512,7 +462,6 @@ platform :mac do
       groups: ["Family"],
       submit_beta_review: false
     )
-    upload_symbols(ipa: pkg, platform: "mac")
   end
 
   desc "Upload metadata to the Distribution page on App Store Connect"

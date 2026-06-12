@@ -22,7 +22,7 @@ Features:
 - Share playlists with other devices
 - Free
 - No account or registration required
-- No ads, no tracking (only Firebase Crashlytics to collect crash reports)
+- No ads, no tracking
 - Open source (this repo contains the all application source code)
 - 15 languages supported (ar, de, es, fr, hi, id, it, ja, ko, pt-BR, ru, th, tr, vi, zh-Hans)
 
@@ -107,10 +107,6 @@ Screenshots in repo created on macOS 26.5 with macOS SDK 26.5
 ```bash
 bundle exec fastlane mac run_ui_snapshots_tests_macos
 ```
-
-## Firebase Distribution
-
-- iOS `bundle exec fastlane ios make_firebase_release`
 
 ## App Store Connect Distribution
 

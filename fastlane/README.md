@@ -23,14 +23,6 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 
 
-### ios make_firebase_release
-
-```sh
-[bundle exec] fastlane ios make_firebase_release
-```
-
-Builds an iOS ad-hoc release and uploads it to Firebase
-
 ### ios make_testflight_release
 
 ```sh

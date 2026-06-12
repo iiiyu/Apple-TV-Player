@@ -3,36 +3,9 @@ import SwiftUI
 import SwiftData
 import FactoryKit
 
-// Only for builds from Fastlane for releases.
-#if FirebaseSupport
-import Firebase
-    #if os(macOS)
-class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        FirebaseApp.configure()
-    }
-}
-    #else
-class AppDelegate: NSObject, UIApplicationDelegate {
-  func application(_ application: UIApplication,
-                   didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-    FirebaseApp.configure()
-    return true
-  }
-}
-    #endif
-#endif
-
 @main
 struct AppleTVMultiplatformApp: App {
 
-#if FirebaseSupport
-    #if os(macOS)
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    #else
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    #endif
-#endif
     @State private var viewModel = AppleTVMultiplatformAppViewModel()
     @State private var playlistListUpdate: UUID = .init()
     @InjectedObservable(\.logger) var logger
