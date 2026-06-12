@@ -19,23 +19,15 @@ Zu den auf Ihrem Gerät gespeicherten Informationen können gehören:
 
 Informationen, die das Gerät verlassen:
 - Vom Nutzer angegebene Playlist-, EPG- sowie Bild- oder Logo-URLs werden nur angefordert, um Inhalte abzurufen, die Sie laden möchten
-- Firebase Analytics wird verwendet, um die App-Nutzung und Installationen zu verstehen
-- Firebase Crashlytics wird verwendet, um Absturzberichte und Diagnosedaten zu erhalten und dadurch die Stabilität der App zu verbessern
 
 Wie Daten verwendet werden:
 - Zum Laden und Anzeigen von nutzerbereitgestellten Playlists und Streams
 - Zur Bereitstellung von Funktionen wie Playlist-Verwaltung, Wiedergabe, EPG und Logos
-- Zur Messung der App-Nutzung auf aggregierter Ebene und zum Verständnis des Produktverhaltens
-- Zur Diagnose von Abstürzen, Fehlern und Stabilitätsproblemen
 
 Werbung und Tracking:
 - Die App zeigt keine Werbung von Drittanbietern an
 - Die App verwendet Ihre Daten nicht für app- oder websiteübergreifendes Tracking
 - Die App verkauft keine personenbezogenen Daten
-
-Dienste von Drittanbietern:
-- Google Firebase Analytics
-- Google Firebase Crashlytics
 
 Kontakt:
 Bei Fragen zum Datenschutz oder Support kontaktieren Sie den Entwickler über das Projekt-Repository:
