@@ -136,7 +136,7 @@ private extension ProgramGuideParser {
             return try Data(contentsOf: url)
         }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await URLSession.download.data(from: url)
 
         if let httpResponse = response as? HTTPURLResponse,
            !(200 ... 299).contains(httpResponse.statusCode) {
