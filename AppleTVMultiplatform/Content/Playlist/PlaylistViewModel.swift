@@ -1,3 +1,4 @@
+import CryptoKit
 import FactoryKit
 import Foundation
 import Observation
@@ -35,9 +36,18 @@ final class PlaylistViewModel {
     private let crypto = Crypto()
     // Original iterations very slow when used for sorting.
     private let iterations: UInt32 = 50_000
+    // Derived once: PBKDF2 per title would dominate the sorting cost for
+    // large playlists (decode is called for every stream title).
+    private let sortingKey: SymmetricKey?
 
     init(content: PlaylistItem.Content) {
         self.content = content
+        let pin = String(data: content.url, encoding: .utf8) ?? ""
+        sortingKey = try? Crypto.deriveKey(
+            pin: pin,
+            salt: Self.salt(for: content),
+            iterations: iterations
+        )
     }
 
     private func loadPlaylist(reloadProgramGuide: Bool) async throws -> [PlaylistParser.Playlist] {
@@ -197,7 +207,7 @@ final class PlaylistViewModel {
         }
     }
 
-    nonisolated private func salt() -> Data {
+    nonisolated private static func salt(for content: PlaylistItem.Content) -> Data {
         var salt: Data
         if content.url.count <= Crypto.keyLength {
           salt = Data(content.url)
@@ -210,23 +220,23 @@ final class PlaylistViewModel {
         return salt
     }
 
+    // The key is derived from `content.url` as pin and salt because when
+    // encrypted it is hidden under user passcode. It is enough to secure this
+    // data that does not disclose a way to brute-force the passcode.
     func encode(title: String) -> (hmac: String, encrypted: String) {
-        // Use `content.url` as pin and salt because when encrypted it is hidden under user passcode.
-        // It is enough to secure this data that does not disclose a way to brute-force the passcode.
-        let pin = String(data:  content.url, encoding: .utf8)!
-        let salt = salt()
-        let encrypted = (try? crypto.encrypt(title, pin: pin, salt: salt, iterations: iterations))?.base64EncodedString() ?? title
-        let hmac = (try? crypto.hmac(title, pin: pin, salt: salt, iterations: iterations)) ?? title
+        guard let sortingKey else {
+            return (title, title)
+        }
+        let encrypted = (try? crypto.encrypt(title, key: sortingKey))?.base64EncodedString() ?? title
+        let hmac = (try? crypto.hmac(title, key: sortingKey)) ?? title
         return (hmac, encrypted)
     }
 
     nonisolated func decode(title: String) -> String {
-        guard let data = Data(base64Encoded: title) else {
+        guard let data = Data(base64Encoded: title), let sortingKey else {
             return title
         }
-        let pin = String(data: content.url, encoding: .utf8)!
-        let salt = salt()
-        return (try? crypto.decrypt(data, pin: pin, salt: salt, iterations: iterations)) ?? title
+        return (try? crypto.decrypt(data, key: sortingKey)) ?? title
     }
 
     private var playlist: PlaylistItem? {
