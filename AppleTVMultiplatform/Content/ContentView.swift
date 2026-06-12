@@ -110,7 +110,12 @@ struct ContentView: View {
                         .padding([.top], 32)
                         .ignoresSafeArea()
                     } else {
-                        Spacer()
+                        ContentUnavailableView(
+                            "Select a channel",
+                            systemImage: "play.tv",
+                            description: Text("Choose a channel from the list to start watching.")
+                        )
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 .id(content.id)
@@ -141,14 +146,17 @@ struct ContentView: View {
     @ViewBuilder
     private func _sidebarView() -> some View {
         PlaylistsView(
-            selectedPlaylist: $viewModel.selectedPlaylist
+            selectedPlaylist: $viewModel.selectedPlaylist,
+            onAddPlaylist: {
+                viewModel.onAddPlaylist()
+            }
         )
         .accessibilityIdentifier("sidebar")
 #if os(macOS)
         .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 280)
 #endif
 #if os(iOS)
-        .navigationBarTitle(String(localized: "Playlists"))
+        .navigationTitle(String(localized: "Playlists"))
 #endif
         .toolbar {
             ToolbarItem {
@@ -166,19 +174,28 @@ struct ContentView: View {
             PlaylistView(
                 content: content,
                 selectedStream: $viewModel.selectedPlaylistStream,
-                reloadCurrentProgram: $reloadCurrentProgram
+                reloadCurrentProgram: $reloadCurrentProgram,
+                onIdentityChange: { identity in
+                    viewModel.onPlaylistRenamed(identity)
+                }
             )
             .id(content.id)
             .accessibilityIdentifier("content")
 #if os(iOS)
-            .navigationBarTitle(viewModel.selectedPlaylist?.name ?? "")
+            .navigationTitle(viewModel.selectedPlaylist?.name ?? "")
 #endif
         } else {
-            VStack {
-                Spacer()
-                Text("Select a playlist")
-                    .accessibilityIdentifier("select-playlist")
-                Spacer()
+            ContentUnavailableView {
+                Label {
+                    // The identifier must stay on a Text, UI tests assert
+                    // staticTexts["select-playlist"].
+                    Text("Select a playlist")
+                        .accessibilityIdentifier("select-playlist")
+                } icon: {
+                    Image(systemName: "play.tv")
+                }
+            } description: {
+                Text("Choose a playlist from the sidebar to see its channels.")
             }
         }
     }

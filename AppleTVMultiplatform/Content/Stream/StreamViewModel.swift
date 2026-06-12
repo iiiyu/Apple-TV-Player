@@ -15,6 +15,8 @@ final class StreamViewModel {
         let program: ProgramGuide.Program
         let state: ProgramState
         let text: String
+        // Non-nil only for the currently airing program, clamped to 0...1.
+        let progress: Double?
 
         var id: String {
             "\(program.start.timeIntervalSince1970)-\(program.stop.timeIntervalSince1970)-\(program.title)"
@@ -32,6 +34,7 @@ final class StreamViewModel {
     private(set) var programs: [ProgramGuide.Program] = []
     private(set) var displayProgram: [DisplayProgram] = []
     private(set) var originStreamCurrentProgram: DisplayProgram?
+    private(set) var didLoadPrograms = false
 
     init(
         content: PlaylistItem.Content,
@@ -56,6 +59,7 @@ final class StreamViewModel {
 
     func loadPrograms(_ stream: PlaylistParser.Stream) async -> Bool {
         logger.info("Read program guide stream", private: stream.title)
+        defer { didLoadPrograms = true }
         guard let guide = await playlistService.programGuide(for: content, stream: stream) else {
             programs = []
             return false
@@ -85,16 +89,25 @@ final class StreamViewModel {
             self.originStreamCurrentProgram = .init(
                 program: currentProgram,
                 state: programState(for: currentProgram, at: now),
-                text: formattedText(for: currentProgram)
+                text: formattedText(for: currentProgram),
+                progress: progress(for: currentProgram, at: now)
             )
         }
         displayProgram = (previousPrograms + [currentProgram].compactMap({ $0 }) + futurePrograms).map {
-            DisplayProgram(
+            let state = programState(for: $0, at: now)
+            return DisplayProgram(
                 program: $0,
-                state: programState(for: $0, at: now),
-                text: formattedText(for: $0)
+                state: state,
+                text: formattedText(for: $0),
+                progress: state == .now ? progress(for: $0, at: now) : nil
             )
         }
+    }
+
+    func progress(for program: ProgramGuide.Program, at now: Date) -> Double {
+        let total = program.stop.timeIntervalSince(program.start)
+        guard total > 0 else { return 0 }
+        return min(max(now.timeIntervalSince(program.start) / total, 0), 1)
     }
 
     func currentTimeText(at now: Date) -> String {

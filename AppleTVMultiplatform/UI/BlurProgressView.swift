@@ -13,7 +13,6 @@ struct BlurProgressView: View {
         ProgressView(text)
             .controlSize(.large)
             .padding(44)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 26))
+            .glassEffect(.regular, in: .rect(cornerRadius: 26))
     }
 }

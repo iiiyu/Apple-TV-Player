@@ -82,6 +82,53 @@ struct ProgramGuideViewModelTests {
         #expect(viewModel.currentTimeText(at: now) == "12:00")
     }
 
+    @Test func displayedProgramsComputesProgressForCurrentProgramOnly() async throws {
+        let now = date(day: 1, hour: 12, minute: 0)
+        let stream = makeStream(title: "Guide", tvgName: nil)
+        let guide = ProgramGuide(
+            channel: .init(id: "channel", displayName: "Guide", iconURL: nil),
+            programs: [
+                makeProgram(title: "Past", day: 1, startHour: 10, startMinute: 0, stopHour: 10, stopMinute: 30),
+                makeProgram(title: "Current", day: 1, startHour: 11, startMinute: 30, stopHour: 12, stopMinute: 30),
+                makeProgram(title: "Future", day: 1, startHour: 12, startMinute: 30, stopHour: 13, stopMinute: 0)
+            ]
+        )
+        let service = MockProgramGuidePlaylistService(guide: guide)
+        Container.shared.playlistService.register { service }
+        let viewModel = StreamViewModel(
+            content: makeContent(),
+            stream: stream,
+            timeZone: timeZone,
+            locale: locale
+        )
+
+        await viewModel.loadPrograms()
+        viewModel.displayedPrograms(at: now, stream: stream)
+        let displayedPrograms = viewModel.displayProgram
+
+        // 12:00 is halfway through the 11:30-12:30 program.
+        #expect(displayedPrograms.first(where: { $0.state == .now })?.progress == 0.5)
+        #expect(displayedPrograms.filter({ $0.state != .now }).allSatisfy({ $0.progress == nil }))
+        #expect(viewModel.originStreamCurrentProgram?.progress == 0.5)
+    }
+
+    @Test func progressClampsOutOfBoundsValues() {
+        let viewModel = StreamViewModel(
+            content: makeContent(),
+            stream: makeStream(title: "Guide", tvgName: nil),
+            timeZone: timeZone,
+            locale: locale
+        )
+        let program = makeProgram(title: "Show", startHour: 11, startMinute: 0, stopHour: 12, stopMinute: 0)
+
+        #expect(viewModel.progress(for: program, at: date(day: 1, hour: 10, minute: 0)) == 0)
+        #expect(viewModel.progress(for: program, at: date(day: 1, hour: 13, minute: 0)) == 1)
+
+        // A degenerate interval must not divide by zero.
+        let degenerate = makeProgram(title: "Show", startHour: 11, startMinute: 0, stopHour: 11, stopMinute: 0)
+        #expect(viewModel.progress(for: degenerate, at: date(day: 1, hour: 11, minute: 0)) == 0)
+    }
+
     @Test func loadProgramsClearsProgramsWhenGuideIsMissing() async throws {
         let service = MockProgramGuidePlaylistService(guide: nil)
         Container.shared.playlistService.register { service }

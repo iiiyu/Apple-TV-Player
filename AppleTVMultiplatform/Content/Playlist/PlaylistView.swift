@@ -30,16 +30,20 @@ struct PlaylistView: View {
 #else
     @State private var showPlaylistSettings: PlaylistItem.Identity?
     @State private var onUpdate = UUID()
+    @State private var identityChange: PlaylistItem.Identity?
+    private var onIdentityChange: (PlaylistItem.Identity) -> Void = { _ in }
 #endif
 #if !os(tvOS)
     init(
         content: PlaylistItem.Content,
         selectedStream: Binding<PlaylistParser.Stream?>,
-        reloadCurrentProgram: Binding<UUID>
+        reloadCurrentProgram: Binding<UUID>,
+        onIdentityChange: @escaping (PlaylistItem.Identity) -> Void = { _ in }
     ) {
         _selectedStream = selectedStream
         _reloadCurrentProgram = reloadCurrentProgram
         _viewModel = State(wrappedValue: PlaylistViewModel(content: content))
+        self.onIdentityChange = onIdentityChange
     }
 #endif
 
@@ -67,7 +71,7 @@ struct PlaylistView: View {
 #if os(tvOS)
         List {
             let showHeader = viewModel.streams.count > 1
-            ForEach(Array(viewModel.streams.enumerated()), id: \.offset) { index, streams in
+            ForEach(Array(viewModel.filteredStreams.enumerated()), id: \.offset) { index, streams in
                 Section {
                     ForEach(streams) { stream in
                         Button {
@@ -76,7 +80,7 @@ struct PlaylistView: View {
                         } label: {
                             row(for: stream)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .frame(height: 72)
+                                .frame(height: 88)
                         }
                         .focused($isStreamFocused, equals: stream)
                     }
@@ -93,6 +97,9 @@ struct PlaylistView: View {
                 }
             }
         }
+        // No .searchable here: on tvOS it permanently shows a keyboard row at
+        // the top of the half-width pane and steals initial focus from the
+        // channel list, which breaks the remote-first select-a-channel flow.
         .task {
             await viewModel.loadStreams()
         }
@@ -110,24 +117,20 @@ struct PlaylistView: View {
 #else
         List(selection: $selectedStream) {
             let showHeader = viewModel.streams.count > 1
-            ForEach(Array(viewModel.streams.enumerated()), id: \.offset) { index, streams in
+            ForEach(Array(viewModel.filteredStreams.enumerated()), id: \.offset) { index, streams in
                 Section {
                     ForEach(streams) { stream in
                         row(for: stream)
                             .tag(stream)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: 44)
+                            .frame(height: 56)
                     }
                 } header: {
-                    if let title = streams.first?.groupTitle {
-                        if showHeader, let title = streams.first?.groupTitle {
-                            HStack {
-                                Spacer()
-                                Text(title)
-                                Spacer()
-                            }
-                        } else {
-                            EmptyView()
+                    if showHeader, let title = streams.first?.groupTitle {
+                        HStack {
+                            Spacer()
+                            Text(title)
+                            Spacer()
                         }
                     } else {
                         EmptyView()
@@ -139,6 +142,23 @@ struct PlaylistView: View {
             await viewModel.loadStreams()
             reloadCurrentProgram = .init()
         }
+    #if os(iOS)
+        .searchable(
+            text: $viewModel.searchText,
+            placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: Text("Search channels")
+        )
+        .refreshable {
+            await viewModel.refresh()
+            reloadCurrentProgram = .init()
+        }
+    #else
+        .searchable(
+            text: $viewModel.searchText,
+            placement: .toolbar,
+            prompt: Text("Search channels")
+        )
+    #endif
         .toolbar {
             if !viewModel.streams.isEmpty {
                 ToolbarItem {
@@ -148,23 +168,47 @@ struct PlaylistView: View {
                     }
                 }
             }
+    #if os(macOS)
+            ToolbarItem {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    Task {
+                        await viewModel.refresh()
+                        reloadCurrentProgram = .init()
+                    }
+                }
+                .disabled(viewModel.isLoading || viewModel.isRefreshing)
+                .help(Text("Reload playlist and program guide"))
+            }
+    #endif
         }
         .sheet(item: $showPlaylistSettings, onDismiss: {
             logger.info("Dismiss Settings", private: viewModel.content.id)
+            if let identityChange {
+                self.identityChange = nil
+                onIdentityChange(identityChange)
+            }
         }) { playlist in
     #if os(iOS)
             NavigationStack {
-                PlaylistSettingsView(identity: viewModel.content.identity, onUpdate: $onUpdate)
+                PlaylistSettingsView(
+                    identity: viewModel.content.identity,
+                    onUpdate: $onUpdate,
+                    identityChange: $identityChange
+                )
             }
             .presentationDetents([.medium, .large])
             .interactiveDismissDisabled(true)
     #else
-            PlaylistSettingsView(identity: viewModel.content.identity, onUpdate: $onUpdate)
-                .interactiveDismissDisabled(true)
+            PlaylistSettingsView(
+                identity: viewModel.content.identity,
+                onUpdate: $onUpdate,
+                identityChange: $identityChange
+            )
+            .interactiveDismissDisabled(true)
     #endif
         }
     #if os(iOS)
-        .navigationBarTitle(viewModel.content.identity.name)
+        .navigationTitle(viewModel.content.identity.name)
         .navigationBarTitleDisplayMode(.inline)
     #endif
 #endif
@@ -174,14 +218,14 @@ struct PlaylistView: View {
         StreamRowView(
             logo: { await viewModel.iconURL(for: stream) },
             title: { viewModel.title(for: stream) },
-            subtitle: { await viewModel.subtitle(for: stream) },
+            currentProgram: { await viewModel.currentProgram(for: stream) },
             reloadCurrentProgram: $reloadCurrentProgram
         )
     }
 
     @ViewBuilder
     private func overlayView() -> some View {
-        if viewModel.isLoading {
+        if viewModel.isLoading && !viewModel.isRefreshing {
             if let progress = viewModel.progress {
                 ProgressView(progress)
             } else {
@@ -193,11 +237,25 @@ struct PlaylistView: View {
                 .padding()
             }
         } else if let errorMessage = viewModel.errorMessage {
-            Text(errorMessage)
-                .foregroundStyle(.secondary)
+            ContentUnavailableView {
+                Label("Unable to Load Channels", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(errorMessage)
+            } actions: {
+#if !os(tvOS)
+                Button("Retry") {
+                    onUpdate = .init()
+                }
+#endif
+            }
+        } else if !viewModel.searchText.isEmpty, viewModel.filteredStreams.isEmpty, !viewModel.streams.isEmpty {
+            ContentUnavailableView.search(text: viewModel.searchText)
         } else if viewModel.streams.isEmpty {
-            Text("No streams found")
-                .foregroundStyle(.secondary)
+            ContentUnavailableView(
+                "No streams found",
+                systemImage: "tv.slash",
+                description: Text("This playlist does not contain any channels.")
+            )
         }
     }
 }
@@ -206,10 +264,10 @@ private struct StreamRowView: View {
 
     let logo: @MainActor () async -> String?
     let title: @MainActor () -> String
-    let subtitle: @MainActor () async -> String?
+    let currentProgram: @MainActor () async -> PlaylistViewModel.CurrentProgram?
     @Binding var reloadCurrentProgram: UUID
     @State private var icon: String?
-    @State private var programTitle: String?
+    @State private var program: PlaylistViewModel.CurrentProgram?
     @InjectedObservable(\.logger) var logger
 
     var body: some View {
@@ -236,19 +294,26 @@ private struct StreamRowView: View {
                     .font(.headline)
 #endif
                     .task {
-                        programTitle = await subtitle()
+                        program = await currentProgram()
                         icon = await logo()
                     }
                     .id(reloadCurrentProgram)
-                if let programTitle {
-                    Text(programTitle)
+                if let program {
+                    Text(program.title)
 #if os(tvOS)
                         .font(.system(size: 24, weight: .regular))
 #else
                         .font(.subheadline)
 #endif
                         .foregroundStyle(.secondary)
-
+                    ProgressView(value: program.progress)
+                        .progressViewStyle(.linear)
+                        .tint(.secondary)
+#if os(tvOS)
+                        .frame(maxWidth: 320)
+#else
+                        .frame(maxWidth: 180)
+#endif
                 }
             }
             .truncationMode(.tail)

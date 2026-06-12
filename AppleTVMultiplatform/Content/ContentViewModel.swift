@@ -76,6 +76,14 @@ final class ContentViewModel {
         logger.info("Update Playlists")
         playlistListUpdate = .init()
     }
+
+    func onPlaylistRenamed(_ identity: PlaylistItem.Identity) {
+        logger.info("Playlist renamed", private: identity)
+        // Re-selecting by the new identity restores fresh content from the
+        // database; the list refresh shows the new name in the sidebar.
+        selectedPlaylist = identity
+        updatePlaylists()
+    }
     
     func onAddPlaylist() {
         logger.info("Show Add Playlist")

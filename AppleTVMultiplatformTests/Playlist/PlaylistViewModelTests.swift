@@ -171,6 +171,144 @@ struct PlaylistViewModelTests {
         )
     }
     
+    @Test func filteredStreamsMatchesTitleTvgNameAndGroupCaseInsensitively() async throws {
+        let playlist = makePlaylist(
+            streams: [
+                .init(
+                    title: "Bc",
+                    url: "https://example.com/two.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "2",
+                    tvgName: nil,
+                    groupTitle: "Sports"
+                ),
+                .init(
+                    title: "Fallback",
+                    url: "https://example.com/one.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "1",
+                    tvgName: "Preferred HD",
+                    groupTitle: nil
+                ),
+                .init(
+                    title: "Cd",
+                    url: "https://example.com/three.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "3",
+                    tvgName: nil,
+                    groupTitle: "Sports"
+                )
+            ]
+        )
+        let service = MockPlaylistService(
+            result: .success([playlist]),
+            programGuide: .init(
+                channel: .init(id: "1", displayName: "1", iconURL: nil),
+                programs: [
+                    .init(title: "1", start: Date().addingTimeInterval(1000), stop: Date().addingTimeInterval(1200))
+                ]
+            )
+        )
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: makeContent())
+        await viewModel.loadStreams()
+
+        // Title match, case-insensitive.
+        viewModel.searchText = "bC"
+        #expect(viewModel.filteredStreams == [[playlist.streams[0]]])
+
+        // tvgName match.
+        viewModel.searchText = "preferred"
+        #expect(viewModel.filteredStreams == [[playlist.streams[1]]])
+
+        // Group title match returns every stream of the group.
+        viewModel.searchText = "sports"
+        #expect(viewModel.filteredStreams == [[playlist.streams[0], playlist.streams[2]]])
+
+        // No match drops empty groups entirely.
+        viewModel.searchText = "zzz"
+        #expect(viewModel.filteredStreams.isEmpty)
+
+        // Empty or whitespace-only query returns everything.
+        viewModel.searchText = ""
+        #expect(viewModel.filteredStreams == viewModel.streams)
+        viewModel.searchText = "   "
+        #expect(viewModel.filteredStreams == viewModel.streams)
+    }
+
+    @Test func refreshForcesPlaylistReloadAndReloadsStreams() async throws {
+        let playlist = makePlaylist(
+            streams: [
+                .init(
+                    title: "One",
+                    url: "https://example.com/one.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "1",
+                    tvgName: nil,
+                    groupTitle: nil
+                )
+            ]
+        )
+        let service = MockPlaylistService(
+            result: .success([playlist]),
+            programGuide: .init(
+                channel: .init(id: "1", displayName: "1", iconURL: nil),
+                programs: [
+                    .init(title: "1", start: Date().addingTimeInterval(1000), stop: Date().addingTimeInterval(1200))
+                ]
+            )
+        )
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: makeContent())
+
+        await viewModel.refresh()
+
+        #expect(service.requestedReloadPlaylist == true)
+        #expect(viewModel.streams == [playlist.streams])
+        #expect(viewModel.isRefreshing == false)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func refreshStoresErrorOnFailure() async throws {
+        let service = MockPlaylistService(result: .failure(MockError.failed))
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: makeContent())
+
+        await viewModel.refresh()
+
+        #expect(viewModel.errorMessage == MockError.failed.errorDescription)
+        #expect(viewModel.isRefreshing == false)
+    }
+
+    @Test func currentProgramReturnsTitleAndProgress() async throws {
+        let service = MockPlaylistService(
+            result: .failure(MockError.failed),
+            programGuide: .init(
+                channel: .init(id: "1", displayName: "1", iconURL: nil),
+                programs: [
+                    .init(
+                        title: "Halfway Show",
+                        start: Date(timeIntervalSince1970: 1000),
+                        stop: Date(timeIntervalSince1970: 2000)
+                    )
+                ]
+            )
+        )
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: makeContent())
+        let stream = PlaylistParser.Stream(
+            title: "One", url: "https://example.com/one.m3u8",
+            tvgLogo: nil, tvgID: nil, tvgName: nil, groupTitle: nil
+        )
+
+        let program = await viewModel.currentProgram(for: stream, at: Date(timeIntervalSince1970: 1500))
+        #expect(program == .init(title: "Halfway Show", progress: 0.5))
+
+        // No program airing at that time.
+        let missing = await viewModel.currentProgram(for: stream, at: Date(timeIntervalSince1970: 5000))
+        #expect(missing == nil)
+    }
+
     @Test func streamsNoOrder() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(
@@ -737,6 +875,7 @@ private final class MockPlaylistService: PlaylistServiceInterface, @unchecked Se
     let programGuide: ProgramGuide?
     private(set) var requestedContent: PlaylistItem.Content?
     private(set) var requestedReloadProgramGuide: Bool?
+    private(set) var requestedReloadPlaylist: Bool?
 
     init(result: Result<[PlaylistParser.Playlist], Error>, programGuide: ProgramGuide? = nil) {
         self.result = result
@@ -759,6 +898,7 @@ private final class MockPlaylistService: PlaylistServiceInterface, @unchecked Se
         progress: @escaping ProgressHandler = { _, _ in}
     ) async throws -> [PlaylistParser.Playlist] {
         requestedContent = content
+        requestedReloadPlaylist = reloadPlaylist
         return try result.get()
     }
 

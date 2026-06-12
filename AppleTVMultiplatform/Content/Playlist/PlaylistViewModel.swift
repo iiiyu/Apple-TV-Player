@@ -16,6 +16,22 @@ final class PlaylistViewModel {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
     private(set) var progress: String?
+    var searchText = ""
+
+    // A projection over the sorted/grouped `streams`, so search keeps
+    // the group order and the per-settings sort order intact.
+    var filteredStreams: [[PlaylistParser.Stream]] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return streams }
+        return streams.compactMap { group in
+            let matches = group.filter { stream in
+                title(for: stream).localizedCaseInsensitiveContains(query)
+                    || stream.title.localizedCaseInsensitiveContains(query)
+                    || (stream.groupTitle?.localizedCaseInsensitiveContains(query) ?? false)
+            }
+            return matches.isEmpty ? nil : matches
+        }
+    }
     private let crypto = Crypto()
     // Original iterations very slow when used for sorting.
     private let iterations: UInt32 = 50_000
@@ -39,6 +55,25 @@ final class PlaylistViewModel {
                 }
             }
         }
+    }
+
+    private(set) var isRefreshing = false
+
+    func refresh() async {
+        guard !isLoading, !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        do {
+            // Force a re-parse of the stored playlist plus a reload of the
+            // program guide and logos. Unlike the settings update flow this
+            // never re-downloads from the origin URL, so no pin is needed.
+            _ = try await playlistService.playlists(for: content, reloadPlaylist: true) { _, _ in }
+        } catch {
+            logger.error(error, private: content.id)
+            errorMessage = errorMessage(for: error)
+            return
+        }
+        await loadStreams()
     }
 
     func loadStreams() async {
@@ -130,12 +165,20 @@ final class PlaylistViewModel {
         return (tvgName?.isEmpty == false ? tvgName : nil) ?? stream.title
     }
 
-    func subtitle(for stream: PlaylistParser.Stream) async -> String? {
-        guard let guide = await playlistService.programGuide(for: content, stream: stream) else {
+    struct CurrentProgram: Equatable, Sendable {
+        let title: String
+        // How far the program has aired, clamped to 0...1.
+        let progress: Double
+    }
+
+    func currentProgram(for stream: PlaylistParser.Stream, at now: Date = Date()) async -> CurrentProgram? {
+        guard let guide = await playlistService.programGuide(for: content, stream: stream),
+              let program = guide.programs.first(where: { $0.start <= now && now < $0.stop }) else {
             return nil
         }
-        let now = Date()
-        return guide.programs.first(where: { $0.start <= now && now < $0.stop })?.title
+        let total = program.stop.timeIntervalSince(program.start)
+        let progress = total > 0 ? min(max(now.timeIntervalSince(program.start) / total, 0), 1) : 0
+        return CurrentProgram(title: program.title, progress: progress)
     }
 
     func iconURL(for stream: PlaylistParser.Stream) async -> String? {

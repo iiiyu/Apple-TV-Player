@@ -12,7 +12,6 @@ struct StreamView: View {
     @State private var viewModel: StreamViewModel
     @Binding private var reloadCurrentProgram: UUID
 #if os(tvOS)
-    @FocusState private var isButtonFocused: Bool
     @State private var showFullScreen = false
     @State private var tvOSPlayer: TvOSPlayer
     @State private var reloadProgramGuide = UUID()
@@ -87,7 +86,7 @@ struct StreamView: View {
             }
         }
 #if os(iOS)
-        .navigationBarTitle(viewModel.title)
+        .navigationTitle(viewModel.title)
         .navigationBarTitleDisplayMode(.inline)
 #endif
         .task(id: reloadCurrentProgram) {
@@ -153,10 +152,7 @@ struct StreamView: View {
             } label: {
                 tvOSPlayer.compactView()
             }
-            .buttonStyle(.borderless)
-            .cornerRadius(homeTvOSStreamLayout ? 0 : 24)
-            .shadow(color: (isButtonFocused ? Color.white : Color.black).opacity(0.4), radius: 12, x: 0, y: 0)
-            .focused($isButtonFocused)
+            .buttonStyle(.card)
         }
         .ignoresSafeArea()
 #else
@@ -167,16 +163,24 @@ struct StreamView: View {
     private func programList() -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
-                ForEach(viewModel.displayProgram) { displayedProgram in
+                if viewModel.didLoadPrograms, viewModel.displayProgram.isEmpty {
+                    ContentUnavailableView(
+                        "No Program Guide",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text("No guide information is available for this channel.")
+                    )
+                } else {
+                    ForEach(viewModel.displayProgram) { displayedProgram in
 #if os(tvOS)
-                    Button {
-                    } label: {
-                        program(displayedProgram)
-                    }
-                    .buttonStyle(.borderless)
+                        Button {
+                        } label: {
+                            program(displayedProgram)
+                        }
+                        .buttonStyle(.borderless)
 #else
-                    program(displayedProgram)
+                        program(displayedProgram)
 #endif
+                    }
                 }
             }
         }
@@ -184,11 +188,18 @@ struct StreamView: View {
     }
 
     private func program(_ displayedProgram: StreamViewModel.DisplayProgram) -> some View {
-        Text(displayedProgram.text)
-            .foregroundStyle(color(for: displayedProgram.state))
+        VStack(alignment: .leading, spacing: 2) {
+            Text(displayedProgram.text)
+                .foregroundStyle(color(for: displayedProgram.state))
 #if os(tvOS)
-            .font(.system(size: 31, weight: .regular))
+                .font(.system(size: 31, weight: .regular))
 #endif
+            if let progress = displayedProgram.progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.green)
+            }
+        }
     }
 
     private func color(for state: StreamViewModel.ProgramState) -> Color {
@@ -211,9 +222,10 @@ private struct MacOsPlayerView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
-        view.player = URL(string: urlString).map { AVPlayer(url: $0) }
+        view.player = context.coordinator.controller.player
         view.showsFullScreenToggleButton = true
         view.controlsStyle = .inline
+        view.allowsPictureInPicturePlayback = true
         view.delegate = context.coordinator
         return view
     }
@@ -223,7 +235,10 @@ private struct MacOsPlayerView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> PlayerDelegate {
-        return PlayerDelegate(onExitFullScreen: onExitFullScreen)
+        return PlayerDelegate(
+            controller: StreamPlayerController(urlString: urlString),
+            onExitFullScreen: onExitFullScreen
+        )
     }
 
     static func dismantleNSView(_ nsView: Self.NSViewType, coordinator: Self.Coordinator) {
@@ -238,9 +253,11 @@ private struct MacOsPlayerView: NSViewRepresentable {
 
     class PlayerDelegate: NSObject, AVPlayerViewDelegate {
 
+        let controller: StreamPlayerController
         let onExitFullScreen: () -> Void
 
-        init(onExitFullScreen: @escaping () -> Void) {
+        init(controller: StreamPlayerController, onExitFullScreen: @escaping () -> Void) {
+            self.controller = controller
             self.onExitFullScreen = onExitFullScreen
             super.init()
         }
@@ -275,24 +292,19 @@ private struct TvOSPlayerView: UIViewControllerRepresentable {
 
 private final class TvOSPlayer {
 
-    let player: AVPlayer
+    private let controller: StreamPlayerController
 
     init(urlString: String) {
-        player = AVPlayer(url: URL(string: urlString)!)
+        controller = StreamPlayerController(urlString: urlString)
     }
 
     func compactView() -> some View {
-        TvOSPlayerView(player: player, compact: true)
+        TvOSPlayerView(player: controller.player, compact: true)
     }
 
     func fullScreenView() -> some View {
-        TvOSPlayerView(player: player, compact: false)
+        TvOSPlayerView(player: controller.player, compact: false)
             .ignoresSafeArea()
-    }
-
-    deinit {
-        player.pause()
-        player.replaceCurrentItem(with: nil)
     }
 }
 #else
@@ -309,12 +321,27 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
             Container.shared.logger().error(error)
         }
         let controller = AVPlayerViewController()
-        controller.player = AVPlayer(url: URL(string: urlString)!)
+        controller.player = context.coordinator.controller.player
+        controller.allowsPictureInPicturePlayback = true
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
         return controller
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(controller: StreamPlayerController(urlString: urlString))
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         uiViewController.player?.play()
+    }
+
+    final class Coordinator {
+
+        let controller: StreamPlayerController
+
+        init(controller: StreamPlayerController) {
+            self.controller = controller
+        }
     }
 
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: Self.Coordinator) {

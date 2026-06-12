@@ -6,6 +6,7 @@ import FactoryKit
 struct PlaylistsView: View {
 
     @Binding var selectedPlaylist: PlaylistItem.Identity?
+    var onAddPlaylist: (() -> Void)? = nil
 #if os(tvOS)
     @State private var showPlaylistSettings: PlaylistItem?
 #endif
@@ -16,8 +17,25 @@ struct PlaylistsView: View {
 
     var body: some View {
         containerView()
+            .overlay {
+                if viewModel.playlists.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Playlists", systemImage: "list.and.film")
+                    } description: {
+                        Text("Add an IPTV playlist to get started.")
+                    } actions: {
+                        if let onAddPlaylist {
+                            Button("Add Playlist", action: onAddPlaylist)
+                                .buttonStyle(.glassProminent)
+                        }
+                    }
+                }
+            }
             .task {
                 viewModel.updatePlaylists()
+                // Restore the row highlight when the list is recreated
+                // (e.g. after a rename or a file-import refresh).
+                viewModel.updateSelection(selectedPlaylist)
             }
             .onChange(of: viewModel.selectedPlaylist) {
                 selectedPlaylist = viewModel.onPlaylistSelection()
@@ -37,7 +55,9 @@ struct PlaylistsView: View {
             }
         })
 #if os(tvOS)
-            .sheet(item: $showPlaylistSettings) { playlist in
+            .sheet(item: $showPlaylistSettings, onDismiss: {
+                viewModel.updatePlaylists()
+            }) { playlist in
                 PlaylistSettingsView(identity: playlist.identity!, onUpdate: .constant(.init()))
                     .padding(44)
             }

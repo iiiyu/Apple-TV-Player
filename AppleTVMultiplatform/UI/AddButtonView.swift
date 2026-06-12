@@ -13,11 +13,8 @@ struct AddButtonView: View {
 #if !os(tvOS)
         Button("Add", systemImage: "plus", role: .none, action: action)
             .accessibilityIdentifier("add")
-    #if os(iOS)
-            .tint(.primary)
-    #endif
     #if os(macOS)
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
     #endif
 #else
         Button(isToolbar ? "" : String(localized: "Add"), systemImage: "plus", role: .none, action: action)
