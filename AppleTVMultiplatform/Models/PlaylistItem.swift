@@ -8,9 +8,10 @@ import FactoryKit
 @Model
 final class PlaylistItem {
 
-    private(set) var name: String? // Not encrypted
+    var name: String? // Not encrypted
+    // Read-only: `identity` is derived from (name, date), edits must never touch the date.
     private(set) var date: Date? // Not encrypted
-    private(set) var icon: String? // Not encrypted
+    var icon: String? // Not encrypted
     var url: Data? // date url plain or encrypted
     var data: Data? // data from url compressed and may be encrypted
     var salt: Data? // Not encrypted

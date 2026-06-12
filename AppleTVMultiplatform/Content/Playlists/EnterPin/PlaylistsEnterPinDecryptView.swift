@@ -6,19 +6,23 @@ struct PlaylistsEnterPinDecryptView: View {
     @Binding var selectedPlaylistContent: PlaylistItem.Content?
     @State private var viewModel: PlaylistsEnterPinDecryptViewModel
     @Environment(\.dismiss) var dismiss
+    private let enteredPin: Binding<String>?
 
     init(
         identity: PlaylistItem.Identity,
-        selectedPlaylistContent: Binding<PlaylistItem.Content?>
+        selectedPlaylistContent: Binding<PlaylistItem.Content?>,
+        enteredPin: Binding<String>? = nil
     ) {
         self._selectedPlaylistContent = selectedPlaylistContent
         self._viewModel = State(initialValue: PlaylistsEnterPinDecryptViewModel(identity: identity))
+        self.enteredPin = enteredPin
     }
 
     var body: some View {
         EnterPinView(pin: $viewModel.pin) {
             Task {
                 if let value = await viewModel.onPinInput() {
+                    enteredPin?.wrappedValue = viewModel.pin
                     selectedPlaylistContent = value
                     dismiss()
                 }

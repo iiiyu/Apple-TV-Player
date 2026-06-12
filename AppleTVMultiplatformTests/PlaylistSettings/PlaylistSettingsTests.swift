@@ -462,9 +462,379 @@ struct PlaylistSettingsTests {
         #expect(viewModel.playlistDecryptedContent == nil)
         #expect(viewModel.dataChanged == false)
     }
+
+    @Test func loadInfoPopulatesFieldsForPlainPlaylist() async throws {
+        let identity = makeIdentity()
+        let playlist = makePlaylistItem(identity: identity, encrypted: false)
+        let database = try makeDatabaseService(items: [playlist])
+        let initialPreparedPlaylist = try #require(PreparedPlaylist(playlist))
+        let restoredPlaylist = makeRestoredPlaylist(
+            identity: identity,
+            urlString: "https://example.com/original.m3u",
+            data: taggedPlaylistData
+        )
+        let playlistAddService = MockPlaylistAddService()
+        playlistAddService.restoreHandler = { preparedPlaylist, pin in
+            #expect(preparedPlaylist == initialPreparedPlaylist)
+            #expect(pin == nil)
+            return restoredPlaylist
+        }
+        Container.shared.databaseService.register { database }
+        Container.shared.playlistAddService.register { playlistAddService }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        await viewModel.loadInfo()
+
+        #expect(viewModel.editedName == identity.name)
+        #expect(viewModel.editedURL == "https://example.com/original.m3u")
+        #expect(viewModel.editedUrlTvg == "https://example.com/guide.xml")
+        #expect(viewModel.editedUrlImg == "https://example.com/images")
+        #expect(viewModel.editedTvgLogo == "https://example.com/logo.png")
+        #expect(viewModel.infoLoaded == true)
+        #expect(viewModel.infoLocked == false)
+        #expect(viewModel.infoChanged == false)
+        #expect(viewModel.dataChanged == false)
+        #expect(playlistAddService.restoreCalls.count == 1)
+    }
+
+    @Test func loadInfoSkipsEncryptedPlaylist() async throws {
+        let identity = makeIdentity()
+        let database = try makeDatabaseService(items: [
+            makePlaylistItem(identity: identity, encrypted: true)
+        ])
+        Container.shared.databaseService.register { database }
+        Container.shared.playlistAddService.register { MockPlaylistAddService() }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        await viewModel.loadInfo()
+
+        #expect(viewModel.infoLocked == true)
+        #expect(viewModel.infoLoaded == false)
+        #expect(viewModel.infoChanged == false)
+    }
+
+    @Test func onInfoUnlockPopulatesFieldsAndUnlocks() async throws {
+        let identity = makeIdentity()
+        let database = try makeDatabaseService(items: [
+            makePlaylistItem(identity: identity, encrypted: true)
+        ])
+        Container.shared.databaseService.register { database }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        viewModel.infoDecryptedContent = makeContent(
+            identity: identity,
+            urlString: "https://example.com/secret.m3u",
+            data: taggedPlaylistData,
+            isStoredInMemoryOnly: true
+        )
+        viewModel.infoPin = "1234"
+        await viewModel.onInfoUnlock()
+
+        #expect(viewModel.infoLocked == false)
+        #expect(viewModel.infoLoaded == true)
+        #expect(viewModel.editedURL == "https://example.com/secret.m3u")
+        #expect(viewModel.editedUrlTvg == "https://example.com/guide.xml")
+        #expect(viewModel.infoDecryptedContent == nil)
+        #expect(viewModel.infoChanged == false)
+    }
+
+    @Test func onInfoUnlockCancelledKeepsLockedState() async throws {
+        let identity = makeIdentity()
+        let database = try makeDatabaseService(items: [
+            makePlaylistItem(identity: identity, encrypted: true)
+        ])
+        Container.shared.databaseService.register { database }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        viewModel.infoPin = "1234"
+        await viewModel.onInfoUnlock()
+
+        #expect(viewModel.infoLocked == true)
+        #expect(viewModel.infoLoaded == false)
+        #expect(viewModel.infoPin == "")
+    }
+
+    @Test func infoChangedTracksEditsAgainstLoadedSnapshot() async throws {
+        let identity = makeIdentity()
+        let viewModel = try await makeLoadedViewModel(identity: identity).viewModel
+
+        #expect(viewModel.infoChanged == false)
+
+        viewModel.editedName = identity.name + "  "
+        #expect(viewModel.infoChanged == false)
+
+        viewModel.editedName = "Other Name"
+        #expect(viewModel.infoChanged == true)
+
+        viewModel.editedName = identity.name
+        #expect(viewModel.infoChanged == false)
+    }
+
+    @Test func saveInfoRenamesWithoutRedownload() async throws {
+        let identity = makeIdentity()
+        let loaded = try await makeLoadedViewModel(identity: identity)
+        let viewModel = loaded.viewModel
+        let originalData = try fetchPlaylist(from: loaded.database, identity: identity).data
+
+        viewModel.editedName = "Renamed"
+        let saved = await viewModel.saveInfo()
+        let storedPlaylist = try #require(
+            loaded.database.mainContext.fetch(FetchDescriptor<PlaylistItem>()).first
+        )
+
+        #expect(saved == true)
+        #expect(storedPlaylist.name == "Renamed")
+        #expect(storedPlaylist.date == identity.date)
+        #expect(storedPlaylist.data == originalData)
+        #expect(viewModel.changedIdentity == .init(name: "Renamed", date: identity.date))
+        #expect(viewModel.didRefreshPlaylist == false)
+        #expect(viewModel.infoChanged == false)
+        #expect(loaded.playlistAddService.prepareCalls.isEmpty)
+    }
+
+    @Test func saveInfoRejectsEmptyNameOrURL() async throws {
+        let identity = makeIdentity()
+        let loaded = try await makeLoadedViewModel(identity: identity)
+        let viewModel = loaded.viewModel
+
+        viewModel.editedName = "   "
+        #expect(await viewModel.saveInfo() == false)
+        #expect(viewModel.error != nil)
+
+        viewModel.error = nil
+        viewModel.editedName = identity.name
+        viewModel.editedURL = "   "
+        #expect(await viewModel.saveInfo() == false)
+        #expect(viewModel.error != nil)
+        #expect(loaded.playlistAddService.prepareCalls.isEmpty)
+    }
+
+    @Test func saveInfoRedownloadsWhenURLOrTagsChange() async throws {
+        let identity = makeIdentity()
+        let loaded = try await makeLoadedViewModel(identity: identity)
+        let viewModel = loaded.viewModel
+        let preparedUpdatedPlaylist = makePreparedPlaylist(
+            identity: identity,
+            urlString: "https://example.com/new.m3u",
+            data: Data("updated-prepared-data".utf8),
+            encrypted: false
+        )
+        let restoredUpdatedPlaylist = makeRestoredPlaylist(
+            identity: identity,
+            urlString: "https://example.com/new.m3u",
+            data: Data("#EXTM3U refreshed".utf8)
+        )
+        loaded.playlistAddService.prepareHandler = { name, urlString, pin, urlTvg, urlImg, tvgLogo in
+            #expect(name == identity.name)
+            #expect(urlString == "https://example.com/new.m3u")
+            #expect(pin == nil)
+            #expect(urlTvg == "https://example.com/new-guide.xml")
+            #expect(urlImg == "https://example.com/images")
+            #expect(tvgLogo == "https://example.com/logo.png")
+            return preparedUpdatedPlaylist
+        }
+        loaded.playlistAddService.restoreHandler = { preparedPlaylist, pin in
+            #expect(preparedPlaylist == preparedUpdatedPlaylist)
+            #expect(pin == nil)
+            return restoredUpdatedPlaylist
+        }
+        loaded.playlistService.reloadPlaylistHandler = { content, reloadPlaylist in
+            // The cache must be refreshed under the stored identity, not the
+            // freshly dated one from preparePlaylist.
+            #expect(content.identity == identity)
+            #expect(content.data == restoredUpdatedPlaylist.data)
+            #expect(reloadPlaylist == true)
+            return [self.makePlaylist(streams: [self.makeStream(title: "Updated")])]
+        }
+
+        viewModel.editedURL = "https://example.com/new.m3u"
+        viewModel.editedUrlTvg = "https://example.com/new-guide.xml"
+        let saved = await viewModel.saveInfo()
+        let storedPlaylist = try fetchPlaylist(from: loaded.database, identity: identity)
+
+        #expect(saved == true)
+        #expect(storedPlaylist.url == preparedUpdatedPlaylist.url)
+        #expect(storedPlaylist.data == preparedUpdatedPlaylist.data)
+        #expect(storedPlaylist.icon == preparedUpdatedPlaylist.icon)
+        #expect(storedPlaylist.date == identity.date)
+        #expect(viewModel.didRefreshPlaylist == true)
+        #expect(viewModel.progress == false)
+        #expect(loaded.playlistService.reloadPlaylistCalls.count == 1)
+    }
+
+    @Test func saveInfoReencryptsWithRetainedPin() async throws {
+        let identity = makeIdentity()
+        let playlist = makePlaylistItem(identity: identity, encrypted: true)
+        let database = try makeDatabaseService(items: [playlist])
+        let preparedEncryptedPlaylist = makePreparedPlaylist(
+            identity: identity,
+            urlString: "https://example.com/new.m3u",
+            data: Data("encrypted-updated".utf8),
+            encrypted: true,
+            salt: Data("new-salt".utf8)
+        )
+        let restoredUpdatedPlaylist = makeRestoredPlaylist(
+            identity: identity,
+            urlString: "https://example.com/new.m3u",
+            data: Data("#EXTM3U refreshed".utf8)
+        )
+        let playlistAddService = MockPlaylistAddService()
+        playlistAddService.prepareHandler = { _, urlString, pin, _, _, _ in
+            #expect(urlString == "https://example.com/new.m3u")
+            #expect(pin == "1234")
+            return preparedEncryptedPlaylist
+        }
+        playlistAddService.restoreHandler = { preparedPlaylist, pin in
+            #expect(preparedPlaylist == preparedEncryptedPlaylist)
+            #expect(pin == "1234")
+            return restoredUpdatedPlaylist
+        }
+        let playlistService = MockPlaylistService()
+        playlistService.reloadPlaylistHandler = { content, reloadPlaylist in
+            #expect(content.identity == identity)
+            #expect(reloadPlaylist == true)
+            return [self.makePlaylist(streams: [self.makeStream(title: "Updated")])]
+        }
+        Container.shared.databaseService.register { database }
+        Container.shared.playlistAddService.register { playlistAddService }
+        Container.shared.playlistService.register { playlistService }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        viewModel.infoDecryptedContent = makeContent(
+            identity: identity,
+            urlString: "https://example.com/original.m3u",
+            data: taggedPlaylistData,
+            isStoredInMemoryOnly: true
+        )
+        viewModel.infoPin = "1234"
+        await viewModel.onInfoUnlock()
+
+        viewModel.editedURL = "https://example.com/new.m3u"
+        let saved = await viewModel.saveInfo()
+        let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+
+        #expect(saved == true)
+        #expect(storedPlaylist.salt == preparedEncryptedPlaylist.salt)
+        #expect(storedPlaylist.encrypted == true)
+        #expect(storedPlaylist.data == preparedEncryptedPlaylist.data)
+    }
+
+    @Test func saveInfoKeepsOldDataWhenDownloadFails() async throws {
+        let identity = makeIdentity()
+        let loaded = try await makeLoadedViewModel(identity: identity)
+        let viewModel = loaded.viewModel
+        let originalData = try fetchPlaylist(from: loaded.database, identity: identity).data
+        loaded.playlistAddService.prepareHandler = { _, _, _, _, _, _ in
+            throw MockFailure.unexpectedCall
+        }
+
+        viewModel.editedURL = "https://example.com/broken.m3u"
+        let saved = await viewModel.saveInfo()
+        let storedPlaylist = try fetchPlaylist(from: loaded.database, identity: identity)
+
+        #expect(saved == false)
+        #expect(storedPlaylist.data == originalData)
+        #expect(storedPlaylist.name == identity.name)
+        #expect(viewModel.error != nil)
+        #expect(viewModel.progress == false)
+        #expect(viewModel.didRefreshPlaylist == false)
+    }
+
+    @Test func saveInfoRecoversCacheWhenRefreshedPlaylistIsEmpty() async throws {
+        let identity = makeIdentity()
+        let loaded = try await makeLoadedViewModel(identity: identity)
+        let viewModel = loaded.viewModel
+        let originalData = try fetchPlaylist(from: loaded.database, identity: identity).data
+        let preparedUpdatedPlaylist = makePreparedPlaylist(
+            identity: identity,
+            urlString: "https://example.com/new.m3u",
+            data: Data("broken-update".utf8),
+            encrypted: false
+        )
+        let restoredUpdatedPlaylist = makeRestoredPlaylist(
+            identity: identity,
+            urlString: "https://example.com/new.m3u",
+            data: Data("#EXTM3U broken".utf8)
+        )
+        loaded.playlistAddService.prepareHandler = { _, _, _, _, _, _ in
+            preparedUpdatedPlaylist
+        }
+        loaded.playlistAddService.restoreHandler = { preparedPlaylist, pin in
+            #expect(pin == nil)
+            if preparedPlaylist == preparedUpdatedPlaylist {
+                return restoredUpdatedPlaylist
+            }
+            // Recovery path restores the stored playlist.
+            return self.makeRestoredPlaylist(
+                identity: identity,
+                urlString: "https://example.com/original.m3u",
+                data: self.taggedPlaylistData
+            )
+        }
+        let playlistService = loaded.playlistService
+        playlistService.reloadPlaylistHandler = { content, reloadPlaylist in
+            #expect(reloadPlaylist == true)
+            if playlistService.reloadPlaylistCalls.count == 1 {
+                #expect(content.identity == identity)
+                #expect(content.data == restoredUpdatedPlaylist.data)
+                return [self.makePlaylist(streams: [])]
+            }
+            #expect(content.data == self.taggedPlaylistData)
+            return [self.makePlaylist(streams: [self.makeStream(title: "Recovered")])]
+        }
+
+        viewModel.editedURL = "https://example.com/new.m3u"
+        let saved = await viewModel.saveInfo()
+        let storedPlaylist = try fetchPlaylist(from: loaded.database, identity: identity)
+
+        #expect(saved == false)
+        #expect(storedPlaylist.data == originalData)
+        #expect(viewModel.error != nil)
+        #expect(viewModel.didRefreshPlaylist == false)
+        #expect(playlistService.reloadPlaylistCalls.count == 2)
+    }
 }
 
 private extension PlaylistSettingsTests {
+
+    var taggedPlaylistData: Data {
+        Data("""
+        #EXTM3U url-tvg="https://example.com/guide.xml" url-img="https://example.com/images" tvg-logo="https://example.com/logo.png"
+        #EXTINF:-1,Channel
+        https://example.com/channel.m3u8
+        """.utf8)
+    }
+
+    @MainActor
+    func makeLoadedViewModel(
+        identity: PlaylistItem.Identity
+    ) async throws -> (
+        viewModel: PlaylistSettingsViewModel,
+        database: DatabaseService,
+        playlistAddService: MockPlaylistAddService,
+        playlistService: MockPlaylistService
+    ) {
+        let playlist = makePlaylistItem(identity: identity, encrypted: false)
+        let database = try makeDatabaseService(items: [playlist])
+        let restoredPlaylist = makeRestoredPlaylist(
+            identity: identity,
+            urlString: "https://example.com/original.m3u",
+            data: taggedPlaylistData
+        )
+        let playlistAddService = MockPlaylistAddService()
+        playlistAddService.restoreHandler = { _, _ in restoredPlaylist }
+        let playlistService = MockPlaylistService()
+        // All mocks must be registered before the view model is created,
+        // @Injected resolves the services at init time.
+        Container.shared.databaseService.register { database }
+        Container.shared.playlistAddService.register { playlistAddService }
+        Container.shared.playlistService.register { playlistService }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        await viewModel.loadInfo()
+        #expect(viewModel.infoLoaded == true)
+        return (viewModel, database, playlistAddService, playlistService)
+    }
 
     func makeIdentity(
         name: String = "Playlist",

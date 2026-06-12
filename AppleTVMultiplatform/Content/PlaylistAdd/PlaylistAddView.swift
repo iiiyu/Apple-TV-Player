@@ -59,9 +59,6 @@ struct PlaylistAddView: View {
                     }
                 }
             }
-#if os(macOS)
-            .cornerRadius(24)
-#endif
 #if !os(iOS)
             Spacer()
             HStack {
@@ -73,7 +70,7 @@ struct PlaylistAddView: View {
         }
         .disabled(viewModel.isLoading)
 #if os(iOS)
-        .navigationBarTitle(String(localized: "Add Playlist"))
+        .navigationTitle(String(localized: "Add Playlist"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -154,16 +151,6 @@ struct PlaylistAddView: View {
                 dismiss()
             }
         }
-    }
-}
-
-private struct KeyboardURLTypeModifier: ViewModifier {
-
-    func body(content: Content) -> some View {
-        content
-#if os(iOS)
-            .keyboardType(.URL)
-#endif
     }
 }
 

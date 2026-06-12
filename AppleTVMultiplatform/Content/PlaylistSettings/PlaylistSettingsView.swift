@@ -5,13 +5,19 @@ import SwiftUI
 struct PlaylistSettingsView: View {
 
     @Binding var onUpdate: UUID
+    @Binding var identityChange: PlaylistItem.Identity?
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: PlaylistSettingsViewModel
     @InjectedObservable(\.logger) var logger
 
-    init(identity: PlaylistItem.Identity, onUpdate: Binding<UUID>) {
+    init(
+        identity: PlaylistItem.Identity,
+        onUpdate: Binding<UUID>,
+        identityChange: Binding<PlaylistItem.Identity?> = .constant(nil)
+    ) {
         _viewModel = State(initialValue: PlaylistSettingsViewModel(identity: identity))
         _onUpdate = onUpdate
+        _identityChange = identityChange
     }
 
     var body: some View {
@@ -70,10 +76,33 @@ struct PlaylistSettingsView: View {
                     pinCodeDecryptSheet(viewModel.identity)
                 }
             }
-            .alert(isPresented: .constant(false), error: viewModel.error, actions: {
-                Button("OK") {
+            .alert(
+                isPresented: Binding(
+                    get: { viewModel.error != nil },
+                    set: { if !$0 { viewModel.error = nil } }
+                ),
+                error: viewModel.error,
+                actions: {
+                    Button("OK") {
+                    }
                 }
-            })
+            )
+            .sheet(isPresented: $viewModel.showPinCodeDecryptInfoView, onDismiss: {
+                Task {
+                    await viewModel.onInfoUnlock()
+                }
+            }) {
+                sheetView {
+                    PlaylistsEnterPinDecryptView(
+                        identity: viewModel.identity,
+                        selectedPlaylistContent: $viewModel.infoDecryptedContent,
+                        enteredPin: $viewModel.infoPin
+                    )
+                }
+            }
+            .task {
+                await viewModel.loadInfo()
+            }
     }
 
     private func pinCodeDecryptSheet(_ identity: PlaylistItem.Identity) -> some View {
@@ -106,12 +135,19 @@ struct PlaylistSettingsView: View {
     private func contentView() -> some View {
         VStack {
             List {
-#if os(iOS)
-                let title = ""
-#else
-                let title = String(localized: "Settings")
-#endif
-                Section(title) {
+                Section(String(localized: "Playlist")) {
+                    if viewModel.infoLocked {
+                        lockedInfoRow()
+                    } else {
+                        infoRow(verbatim: String(localized: "Name"), placeholder: "Required", text: $viewModel.editedName, id: "settings-name")
+                        infoRow(verbatim: "URL", placeholder: "Required", text: $viewModel.editedURL, id: "settings-url", url: true)
+                        infoRow(verbatim: "tvg-logo", placeholder: "Optional", text: $viewModel.editedTvgLogo, id: "settings-tvg-logo", url: true)
+                        infoRow(verbatim: "url-tvg", placeholder: "Optional", text: $viewModel.editedUrlTvg, id: "settings-url-tvg", url: true)
+                        infoRow(verbatim: "url-img", placeholder: "Optional", text: $viewModel.editedUrlImg, id: "settings-url-img", url: true)
+                    }
+                }
+
+                Section(String(localized: "Settings")) {
                     sortOptions()
                     pinOptions()
                     updateProgramGuideOptions()
@@ -119,7 +155,6 @@ struct PlaylistSettingsView: View {
                 }
             }
 #if os(macOS)
-            .cornerRadius(24)
             .listStyle(.inset)
 #endif
             Spacer()
@@ -146,11 +181,11 @@ struct PlaylistSettingsView: View {
         .listStyle(.insetGrouped)
 #elseif os(tvOS)
         .padding(44)
-        .frame(minHeight: UIScreen.main.bounds.height * 0.6)
+        .frame(minHeight: UIScreen.main.bounds.height * 0.85)
         .frame(minWidth: UIScreen.main.bounds.width / 1.6)
 #elseif os(macOS)
         .padding()
-        .frame(minHeight: 240)
+        .frame(minHeight: 460)
 #endif
     }
 
@@ -165,11 +200,71 @@ struct PlaylistSettingsView: View {
     private func confirmButtonView() -> some View {
         ConfirmButtonView {
             let _ = logger.info("Confirm button event")
-            dismiss()
+            Task {
+                guard await viewModel.saveInfo() else {
+                    return
+                }
+                if viewModel.didRefreshPlaylist {
+                    onUpdate = .init()
+                }
+                if let newIdentity = viewModel.changedIdentity {
+                    identityChange = newIdentity
+                }
+                dismiss()
+            }
         }
-        .disabled(!viewModel.dataChanged)
+        .disabled(!viewModel.dataChanged && !viewModel.infoChanged)
+    }
+
+    private func infoRow(
+        verbatim label: String,
+        placeholder: LocalizedStringKey,
+        text: Binding<String>,
+        id: String,
+        url: Bool = false
+    ) -> some View {
+        HStack {
+            Text(verbatim: label)
+            TextField(placeholder, text: text)
+                .autocorrectionDisabled()
+#if os(iOS)
+                .textFieldStyle(.plain)
+#elseif os(macOS)
+                .textFieldStyle(.roundedBorder)
+#endif
+                .modifier(ConditionalKeyboardURLModifier(enabled: url))
+                .accessibilityIdentifier(id)
+        }
+    }
+
+    private func lockedInfoRow() -> some View {
+        HStack {
+            Image(systemName: "lock")
+            Text("Enter passcode to view")
+            Spacer()
+            Button {
+                viewModel.onShowInfoUnlock()
+            } label: {
+                Image(systemName: "lock.open")
+            }
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("settings-unlock-info")
+        }
     }
     
+    private struct ConditionalKeyboardURLModifier: ViewModifier {
+
+        let enabled: Bool
+
+        func body(content: Content) -> some View {
+            if enabled {
+                content.modifier(KeyboardURLTypeModifier())
+            } else {
+                content
+            }
+        }
+    }
+
     private func sortOptions() -> some View {
         HStack {
             Image(systemName: "list.number")
@@ -250,7 +345,7 @@ struct PlaylistSettingsView: View {
             } label: {
                 Image(systemName: "arrow.down.circle")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
         }
     }
 
@@ -268,7 +363,7 @@ struct PlaylistSettingsView: View {
             } label: {
                 Image(systemName: "arrow.down.circle")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
         }
     }
 }
