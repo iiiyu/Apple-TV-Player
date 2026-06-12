@@ -108,7 +108,8 @@ struct PlaylistSettingsView: View {
     private func pinCodeDecryptSheet(_ identity: PlaylistItem.Identity) -> some View {
         PlaylistsEnterPinDecryptView(
             identity: identity,
-            selectedPlaylistContent: $viewModel.playlistDecryptedContent
+            selectedPlaylistContent: $viewModel.playlistDecryptedContent,
+            enteredPin: $viewModel.decryptPin
         )
     }
 

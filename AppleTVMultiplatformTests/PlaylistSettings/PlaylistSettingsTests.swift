@@ -463,6 +463,105 @@ struct PlaylistSettingsTests {
         #expect(viewModel.dataChanged == false)
     }
 
+    @Test func updatePlaylistReencryptsEncryptedPlaylistAndRefreshesUnderStoredIdentity() async throws {
+        let identity = makeIdentity()
+        let playlist = makePlaylistItem(identity: identity, encrypted: true)
+        let database = try makeDatabaseService(items: [playlist])
+        let decryptedContent = makeContent(
+            identity: identity,
+            urlString: "https://example.com/original.m3u",
+            data: taggedPlaylistData,
+            isStoredInMemoryOnly: true
+        )
+        let preparedUpdatedPlaylist = makePreparedPlaylist(
+            identity: identity,
+            urlString: "encrypted-url",
+            data: Data("encrypted-updated".utf8),
+            encrypted: true,
+            salt: Data("fresh-salt".utf8)
+        )
+        // preparePlaylist stamps a fresh date in production: model that here to
+        // prove the cache refresh still happens under the stored identity.
+        let restoredUpdatedPlaylist = RestoredPlaylist(
+            name: identity.name,
+            date: Date(timeIntervalSince1970: 99_999),
+            icon: "https://example.com/icon.png",
+            url: Data("https://example.com/original.m3u".utf8),
+            data: Data("#EXTM3U refreshed".utf8),
+            isStoredInMemoryOnly: false
+        )
+        let playlistAddService = MockPlaylistAddService()
+        playlistAddService.prepareHandler = { _, urlString, pin, _, _, _ in
+            #expect(urlString == "https://example.com/original.m3u")
+            #expect(pin == "1234")
+            return preparedUpdatedPlaylist
+        }
+        playlistAddService.restoreHandler = { preparedPlaylist, pin in
+            #expect(preparedPlaylist == preparedUpdatedPlaylist)
+            #expect(pin == "1234")
+            return restoredUpdatedPlaylist
+        }
+        let playlistService = MockPlaylistService()
+        playlistService.reloadPlaylistHandler = { content, reloadPlaylist in
+            if playlistService.reloadPlaylistCalls.count == 1 {
+                #expect(reloadPlaylist == false)
+                return [self.makePlaylist(
+                    tvgURL: "https://example.com/guide.xml",
+                    streams: [self.makeStream(title: "Cached")]
+                )]
+            }
+            // The refresh must be keyed by the stored identity, not the fresh
+            // date stamped by preparePlaylist.
+            #expect(content.identity == identity)
+            #expect(content.data == restoredUpdatedPlaylist.data)
+            #expect(reloadPlaylist == true)
+            return [self.makePlaylist(streams: [self.makeStream(title: "Updated")])]
+        }
+        Container.shared.databaseService.register { database }
+        Container.shared.playlistAddService.register { playlistAddService }
+        Container.shared.playlistService.register { playlistService }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        viewModel.playlistDecryptedContent = decryptedContent
+        viewModel.decryptPin = "1234"
+
+        let didUpdate = await viewModel.updatePlaylistDecrypted()
+        let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+
+        #expect(didUpdate == true)
+        #expect(storedPlaylist.url == preparedUpdatedPlaylist.url)
+        #expect(storedPlaylist.data == preparedUpdatedPlaylist.data)
+        #expect(storedPlaylist.salt == preparedUpdatedPlaylist.salt)
+        #expect(storedPlaylist.encrypted == true)
+        #expect(viewModel.decryptPin == "")
+        #expect(playlistService.reloadPlaylistCalls.count == 2)
+    }
+
+    @Test func updatePlaylistDecryptedFailsWithoutPin() async throws {
+        let identity = makeIdentity()
+        let database = try makeDatabaseService(items: [
+            makePlaylistItem(identity: identity, encrypted: true)
+        ])
+        let decryptedContent = makeContent(
+            identity: identity,
+            urlString: "https://example.com/original.m3u",
+            data: taggedPlaylistData,
+            isStoredInMemoryOnly: true
+        )
+        Container.shared.databaseService.register { database }
+        Container.shared.playlistAddService.register { MockPlaylistAddService() }
+        Container.shared.playlistService.register { MockPlaylistService() }
+
+        let viewModel = PlaylistSettingsViewModel(identity: identity)
+        viewModel.playlistDecryptedContent = decryptedContent
+        viewModel.decryptPin = ""
+
+        let didUpdate = await viewModel.updatePlaylistDecrypted()
+
+        #expect(didUpdate == false)
+        #expect(viewModel.error != nil)
+    }
+
     @Test func loadInfoPopulatesFieldsForPlainPlaylist() async throws {
         let identity = makeIdentity()
         let playlist = makePlaylistItem(identity: identity, encrypted: false)

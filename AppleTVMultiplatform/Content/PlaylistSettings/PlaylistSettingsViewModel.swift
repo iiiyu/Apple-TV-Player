@@ -37,6 +37,9 @@ final class PlaylistSettingsViewModel {
     var showPinCodeDecryptInfoView = false
     var infoDecryptedContent: PlaylistItem.Content?
     var infoPin = ""
+    // Pin entered in the shared decrypt sheets (pin disable / guide / playlist
+    // update), needed to re-encrypt after updating an encrypted playlist.
+    var decryptPin = ""
     private(set) var infoLocked = false
     private(set) var infoLoaded = false
     private(set) var changedIdentity: PlaylistItem.Identity?
@@ -204,6 +207,7 @@ extension PlaylistSettingsViewModel {
         defer {
             progress = false
             playlistDecryptedContent = nil
+            decryptPin = ""
             updateDataChanged()
         }
         guard let playlist, let content = playlistDecryptedContent else {
@@ -224,6 +228,17 @@ extension PlaylistSettingsViewModel {
             progressText = nil
         }
         logger.info("Updating playlist", private: identity)
+        // An encrypted playlist must be re-encrypted on write, otherwise the
+        // stored data would be plaintext while the encrypted flag stays true
+        // and the next decryption would fail forever.
+        var pin: String?
+        if playlist.encrypted {
+            pin = normalizedInfo(decryptPin)
+            guard pin != nil else {
+                self.error = .init(error: String(localized: "Enter the passcode to update an encrypted playlist."))
+                return false
+            }
+        }
         // Read cached playlist.
         let playlistsCache = try await playlistService.playlists(
             for: content, reloadPlaylist: false, progress: { _, _ in }
@@ -237,7 +252,7 @@ extension PlaylistSettingsViewModel {
         let preparedUpdatedPlaylist = try await playlistAddService.preparePlaylist(
             name: content.identity.name,
             urlString: String(data: content.url, encoding: .utf8)!,
-            pin: nil,
+            pin: pin,
             urlTvg: mainPlaylist.tvgURL ?? mainPlaylist.xTvgURL,
             urlImg: mainPlaylist.imageURL,
             tvgLogo: mainPlaylist.tvgLogo
@@ -251,9 +266,18 @@ extension PlaylistSettingsViewModel {
                 }
             }
         }
-        let newContent = try await playlistAddService.restorePlaylist(preparedUpdatedPlaylist, pin: nil).content
+        let restoredUpdatedPlaylist = try await playlistAddService.restorePlaylist(preparedUpdatedPlaylist, pin: pin)
+        // Refresh the cache under the stored identity: `preparePlaylist` stamps
+        // a fresh date and a cache entry keyed by it would never be read again,
+        // leaving the channel list stale after the update.
+        let refreshContent = PlaylistItem.Content(
+            identity: content.identity,
+            url: restoredUpdatedPlaylist.url,
+            data: restoredUpdatedPlaylist.data,
+            isStoredInMemoryOnly: restoredUpdatedPlaylist.isStoredInMemoryOnly
+        )
         // Update cache with new playlist + update program guide + update images.
-        let playlists = try await playlistService.playlists(for: newContent, reloadPlaylist: true, progress: { [weak self] _, step in
+        let playlists = try await playlistService.playlists(for: refreshContent, reloadPlaylist: true, progress: { [weak self] _, step in
             Task { @MainActor in
                 switch step {
                 case .start, .complete:
@@ -271,7 +295,13 @@ extension PlaylistSettingsViewModel {
             )
             return false
         }
+        // The url and salt must be written together with the data: with a pin
+        // the prepared playlist is encrypted under a fresh salt.
+        playlist.url = preparedUpdatedPlaylist.url
         playlist.data = preparedUpdatedPlaylist.data
+        playlist.icon = preparedUpdatedPlaylist.icon
+        playlist.salt = preparedUpdatedPlaylist.salt
+        playlist.encrypted = preparedUpdatedPlaylist.encrypted
         return true
     }
 }
@@ -337,6 +367,9 @@ extension PlaylistSettingsViewModel {
             playlist.data = encryptedPlaylist.data
             playlist.salt = encryptedPlaylist.salt
             playlist.encrypted = encryptedPlaylist.encrypted
+            // Keep the info-edit pin in sync so a later save re-encrypts
+            // with the pin that is actually in effect.
+            retainedPin = pin
             didEncrypt = true
             logger.info("Complete encryption", private: identity)
         } catch {
@@ -364,6 +397,7 @@ extension PlaylistSettingsViewModel {
             playlist.url = playlistDecryptedContent.url
             playlist.salt = nil
             playlist.encrypted = false
+            retainedPin = nil
             logger.info("Complete decryption", private: identity)
         } catch {
             logger.error(error)
