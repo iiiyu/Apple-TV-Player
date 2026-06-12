@@ -2,7 +2,7 @@ Chính sách quyền riêng tư
 
 Cập nhật lần cuối: 23 tháng 4 năm 2026
 
-Bro IPTV Player là trình phát danh sách phát M3U và M3U8 cho iPhone, iPad, Mac và Apple TV. Ứng dụng không yêu cầu đăng ký tài khoản và không bao gồm kênh, nội dung media hoặc danh sách phát tích hợp sẵn.
+HiPlayer là trình phát danh sách phát M3U và M3U8 cho iPhone, iPad, Mac và Apple TV. Ứng dụng không yêu cầu đăng ký tài khoản và không bao gồm kênh, nội dung media hoặc danh sách phát tích hợp sẵn.
 
 Thông tin bạn có thể cung cấp:
 - URL danh sách phát

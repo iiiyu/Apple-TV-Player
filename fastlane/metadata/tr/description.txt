@@ -1,4 +1,4 @@
-Bro IPTV Player, iPhone, iPad, Mac ve Apple TV'de M3U oynatma listelerini izlemek için hızlı, özel ve kullanımı kolay bir yoldur. Sadece oynatma listesi URL'sini ekleyin ve saniyeler içinde izlemeye başlayın; hesap yok, kayıt yok.
+HiPlayer, iPhone, iPad, Mac ve Apple TV'de M3U oynatma listelerini izlemek için hızlı, özel ve kullanımı kolay bir yoldur. Sadece oynatma listesi URL'sini ekleyin ve saniyeler içinde izlemeye başlayın; hesap yok, kayıt yok.
 
 Öne çıkan özellikler:
 - iOS, iPadOS, macOS ve tvOS üzerinde çalışır
@@ -11,4 +11,4 @@ Bro IPTV Player, iPhone, iPad, Mac ve Apple TV'de M3U oynatma listelerini izleme
 - Günlük kullanım için hızlı ve anlaşılır arayüz
 
 Önemli:
-Bro IPTV Player herhangi bir kanal, medya veya oynatma listesi sağlamaz, barındırmaz, satmaz ya da içermez. Uygulama yalnızca kullanıcı tarafından eklenen içeriği oynatır ve bu içeriğe erişim haklarına sahip olmaktan siz sorumlusunuz.
+HiPlayer herhangi bir kanal, medya veya oynatma listesi sağlamaz, barındırmaz, satmaz ya da içermez. Uygulama yalnızca kullanıcı tarafından eklenen içeriği oynatır ve bu içeriğe erişim haklarına sahip olmaktan siz sorumlusunuz.

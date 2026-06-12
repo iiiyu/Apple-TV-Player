@@ -2,7 +2,7 @@ Gizlilik Politikası
 
 Son güncelleme: 23 Nisan 2026
 
-Bro IPTV Player, iPhone, iPad, Mac ve Apple TV için bir M3U ve M3U8 oynatma listesi oynatıcısıdır. Uygulama hesap kaydı gerektirmez ve yerleşik kanal, medya veya oynatma listesi içermez.
+HiPlayer, iPhone, iPad, Mac ve Apple TV için bir M3U ve M3U8 oynatma listesi oynatıcısıdır. Uygulama hesap kaydı gerektirmez ve yerleşik kanal, medya veya oynatma listesi içermez.
 
 Sağlayabileceğiniz bilgiler:
 - Oynatma listesi URL'leri

@@ -2,7 +2,7 @@ Kebijakan Privasi
 
 Terakhir diperbarui: 23 April 2026
 
-Bro IPTV Player adalah pemutar playlist M3U dan M3U8 untuk iPhone, iPad, Mac, dan Apple TV. Aplikasi ini tidak memerlukan pendaftaran akun dan tidak menyertakan saluran, media, atau playlist bawaan.
+HiPlayer adalah pemutar playlist M3U dan M3U8 untuk iPhone, iPad, Mac, dan Apple TV. Aplikasi ini tidak memerlukan pendaftaran akun dan tidak menyertakan saluran, media, atau playlist bawaan.
 
 Informasi yang dapat Anda berikan:
 - URL playlist

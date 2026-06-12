@@ -13,6 +13,7 @@ struct ContentView: View {
     @State var focusedStream: PlaylistParser.Stream?
 #endif
     @State private var reloadCurrentProgram: UUID = .init()
+    @State private var showAcknowledgements = false
 
     var body: some View {
         contentView()
@@ -32,6 +33,15 @@ struct ContentView: View {
             }
             .onChange(of: playlistListUpdate) {
                 viewModel.updatePlaylists()
+            }
+            .sheet(isPresented: $showAcknowledgements) {
+#if os(iOS)
+                NavigationStack {
+                    AcknowledgementsView()
+                }
+#else
+                AcknowledgementsView()
+#endif
             }
             .sheet(item: $viewModel.isShowingPlaylistDecryptPin, onDismiss: {
                 viewModel.onDecrypt()
@@ -77,8 +87,14 @@ struct ContentView: View {
                 )
                 .frame(width: UIScreen.main.bounds.width / 2)
 
-                AddButtonView(isToolbar: false) {
-                    viewModel.onAddPlaylist()
+                HStack {
+                    AddButtonView(isToolbar: false) {
+                        viewModel.onAddPlaylist()
+                    }
+                    Button("", systemImage: "info.circle") {
+                        showAcknowledgements = true
+                    }
+                    .accessibilityIdentifier("acknowledgements")
                 }
             }
             .id(viewModel.playlistListUpdate)
@@ -167,6 +183,12 @@ struct ContentView: View {
                 AddButtonView {
                     viewModel.onAddPlaylist()
                 }
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button("Acknowledgements", systemImage: "info.circle") {
+                    showAcknowledgements = true
+                }
+                .accessibilityIdentifier("acknowledgements")
             }
         }
         .id(viewModel.playlistListUpdate)

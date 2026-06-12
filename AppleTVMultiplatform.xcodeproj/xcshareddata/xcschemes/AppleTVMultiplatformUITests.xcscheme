@@ -30,7 +30,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "820B7D712F5F2C5C0043DE13"
-               BuildableName = "Bro Player.app"
+               BuildableName = "HiPlayer.app"
                BlueprintName = "AppleTVMultiplatform"
                ReferencedContainer = "container:AppleTVMultiplatform.xcodeproj">
             </BuildableReference>
@@ -116,7 +116,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "820B7D712F5F2C5C0043DE13"
-            BuildableName = "Bro Player.app"
+            BuildableName = "HiPlayer.app"
             BlueprintName = "AppleTVMultiplatform"
             ReferencedContainer = "container:AppleTVMultiplatform.xcodeproj">
          </BuildableReference>

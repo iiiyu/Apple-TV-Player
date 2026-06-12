@@ -1,7 +1,7 @@
 import FactoryTesting
 import Foundation
 import Testing
-@testable import Bro_Player
+@testable import HiPlayer
 
 @Suite(.container)
 struct DataCompressorTests {

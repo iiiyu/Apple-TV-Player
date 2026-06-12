@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Bro_Player
+@testable import HiPlayer
 
 struct PlaylistServiceTests {
 

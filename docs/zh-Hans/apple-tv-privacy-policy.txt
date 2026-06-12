@@ -2,7 +2,7 @@
 
 最后更新：2026年4月23日
 
-Bro IPTV Player 是一款适用于 iPhone、iPad、Mac 和 Apple TV 的 M3U 和 M3U8 播放列表播放器。该应用无需注册账户，也不包含内置频道、媒体内容或播放列表。
+HiPlayer 是一款适用于 iPhone、iPad、Mac 和 Apple TV 的 M3U 和 M3U8 播放列表播放器。该应用无需注册账户，也不包含内置频道、媒体内容或播放列表。
 
 您可以提供的信息：
 - 播放列表 URL

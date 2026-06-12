@@ -3,7 +3,7 @@ import FactoryTesting
 import Foundation
 import Testing
 import SwiftData
-@testable import Bro_Player
+@testable import HiPlayer
 
 @Suite(.container)
 struct PlaylistViewModelTests {

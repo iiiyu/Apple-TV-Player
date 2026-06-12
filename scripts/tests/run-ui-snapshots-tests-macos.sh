@@ -4,16 +4,16 @@ SCRIPT_DIR="${0:A:h}"
 LOCAL_PORT="${LOCAL_PORT:-8000}"
 
 # If app is not run in foreground (stays in Dock after launch) then you need to cache it state via call (once):
-# `open -a ${DERIVED_DATA}/Build/Products/Debug/Bro Player.app`
+# `open -a ${DERIVED_DATA}/Build/Products/Debug/HiPlayer.app`
 # This somehow will cache/reset app state and after that it should work correctly.
 
 DERIVED_DATA=$(xcodebuild -project AppleTVMultiplatform.xcodeproj -scheme AppleTVMultiplatform -showBuildSettings | sed -n 's/.*OBJROOT = \(.*\)\/Build\/Intermediates.noindex/\1/p')
-APP_PATH="${DERIVED_DATA}/Build/Products/Debug/Bro Player.app"
+APP_PATH="${DERIVED_DATA}/Build/Products/Debug/HiPlayer.app"
 
 if [[ -d "$APP_PATH" ]]; then
   open "${APP_PATH}"
   sleep 3
-  osascript -e 'quit app "Bro Player"'
+  osascript -e 'quit app "HiPlayer"'
 fi
 
 "$SCRIPT_DIR/macos-tests-runner.sh" \
@@ -38,7 +38,7 @@ fi
 
 open "${APP_PATH}"
 sleep 3
-osascript -e 'quit app "Bro Player"'
+osascript -e 'quit app "HiPlayer"'
 
 "$SCRIPT_DIR/macos-tests-runner.sh" \
   "AppleTVMultiplatformUITests" \

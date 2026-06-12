@@ -1,4 +1,4 @@
-Bro IPTV Player è un modo veloce, riservato e piacevolmente semplice per guardare playlist M3U su iPhone, iPad, Mac e Apple TV. Basta aggiungere l'URL di una playlist e iniziare a guardare in pochi secondi, senza account e senza registrazione.
+HiPlayer è un modo veloce, riservato e piacevolmente semplice per guardare playlist M3U su iPhone, iPad, Mac e Apple TV. Basta aggiungere l'URL di una playlist e iniziare a guardare in pochi secondi, senza account e senza registrazione.
 
 Funzionalità principali:
 - Funziona su iOS, iPadOS, macOS e tvOS
@@ -11,4 +11,4 @@ Funzionalità principali:
 - Interfaccia veloce e chiara per l'uso quotidiano
 
 Importante:
-Bro IPTV Player non fornisce, non ospita, non vende e non include canali, contenuti multimediali o playlist. L'app riproduce solo i contenuti aggiunti dall'utente e sei responsabile di disporre dei diritti necessari per accedere a tali contenuti.
+HiPlayer non fornisce, non ospita, non vende e non include canali, contenuti multimediali o playlist. L'app riproduce solo i contenuti aggiunti dall'utente e sei responsabile di disporre dei diritti necessari per accedere a tali contenuti.

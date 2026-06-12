@@ -2,7 +2,7 @@ import FactoryTesting
 import Foundation
 import Testing
 import os
-@testable import Bro_Player
+@testable import HiPlayer
 
 @Suite(.container)
 struct ProgramGuideParserTests {

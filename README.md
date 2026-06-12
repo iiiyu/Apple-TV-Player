@@ -1,17 +1,11 @@
 
-<img src="backup-icons-svg/live-glass-tvos-top-shelf-wide.svg" alt="">
+# HiPlayer
 
-[![codecov](https://codecov.io/github/mikehouse/Apple-TV-Player/graph/badge.svg?token=3OPT05N2IP)](https://codecov.io/github/mikehouse/Apple-TV-Player)
+HiPlayer is a fast, private, and simple way to watch M3U playlists on iPhone, iPad, Mac, and Apple TV.
 
-# IPTV Player
-
-Bro IPTV Player is a **free**, fast, private, and simple way to watch M3U playlists on iPhone, iPad, Mac, and Apple TV.
-
-<p>
-  <a href="https://apps.apple.com/us/app/bro-iptv-player/id6762360135" target="_blank" rel="noopener noreferrer">
-    <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" height="44">
-  </a>
-</p>
+> HiPlayer is based on [Apple-TV-Player](https://github.com/mikehouse/Apple-TV-Player)
+> by **Mikhail Demidov**, used under the [MIT License](LICENSE.txt).
+> Huge thanks to Mikhail for building and open-sourcing the original project. ❤️
 
 Features:
 - Works across iOS, iPadOS, macOS, and tvOS
@@ -29,7 +23,7 @@ Features:
 
 ‼️ **Important:**
 
-Bro IPTV Player does not provide, host, sell, or include any channels, media, or playlists. The app only plays content added by the user, and you are responsible for having the rights to access that content.
+HiPlayer does not provide, host, sell, or include any channels, media, or playlists. The app only plays content added by the user, and you are responsible for having the rights to access that content.
 
 ----
 
@@ -45,6 +39,16 @@ Bro IPTV Player does not provide, host, sell, or include any channels, media, or
 
 ## iPad
 <img src="/docs/ipad-dark.webp" alt="">
+
+----
+
+# Acknowledgements
+
+- [Apple-TV-Player](https://github.com/mikehouse/Apple-TV-Player) by Mikhail Demidov - the original project this app is based on (MIT)
+- [Factory](https://github.com/hmlongco/Factory) by Michael Long (MIT)
+- [Kanna](https://github.com/tid-kijyun/Kanna) by Atsushi Kiwaki (MIT)
+- [Nuke](https://github.com/kean/Nuke) by Alexander Grebenyuk (MIT)
+- [SWCompression](https://github.com/tsolomko/SWCompression) by Timofey Solomko (MIT)
 
 ----
 

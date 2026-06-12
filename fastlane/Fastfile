@@ -9,7 +9,7 @@ scheme="AppleTVMultiplatform"
 development_signing_certificate="A39AD919F97CB1C610CEB5D26CB688BDFF7D93FE"
 distribution_signing_certificate="B0135C0CCF9DE52F543D1DDF1765E224FEC0DF8E"
 team_id="4HUHB9J47M"
-bundle_id="mike.house.nsk.AppleTVMultiplatform"
+bundle_id="com.ohmyapps.hiplayer"
 
 private_lane :build_app_package do |options|
   xcodes(

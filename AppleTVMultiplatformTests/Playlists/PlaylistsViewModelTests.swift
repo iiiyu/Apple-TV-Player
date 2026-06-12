@@ -6,7 +6,7 @@ import FactoryTesting
 #if canImport(UIKit)
 import UIKit
 #endif
-@testable import Bro_Player
+@testable import HiPlayer
 
 @Suite(.container)
 struct PlaylistsViewModelTests {
