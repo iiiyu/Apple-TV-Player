@@ -356,6 +356,59 @@ struct PlaylistViewModelTests {
         #expect(viewModel.stream(matchingLastWatched: "unknown") == nil)
     }
 
+    @Test func favoritesOrderPutsFavoritesFirstAndToggleUpdatesSettings() async throws {
+        let expectedContent = makeContent()
+        let streams: [PlaylistParser.Stream] = ["Cd", "Ab", "Bc"].map {
+            .init(
+                title: $0,
+                url: "https://example.com/\($0).m3u8",
+                tvgLogo: nil, tvgID: $0, tvgName: nil, groupTitle: nil
+            )
+        }
+        let playlist = makePlaylist(streams: streams)
+
+        let database = DatabaseService(isStoredInMemoryOnly: true)
+        let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.favorites.rawValue)
+        let item = PlaylistItem(
+            name: expectedContent.identity.name,
+            date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
+            salt: nil, encrypted: false, settings: settings
+        )
+        database.mainContext.insert(item)
+        try database.mainContext.save()
+        Container.shared.databaseService.register { database }
+
+        let service = MockPlaylistService(
+            result: .success([playlist]),
+            programGuide: .init(
+                channel: .init(id: "1", displayName: "1", iconURL: nil),
+                programs: [
+                    .init(title: "1", start: Date().addingTimeInterval(1000), stop: Date().addingTimeInterval(1200))
+                ]
+            )
+        )
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: expectedContent)
+
+        await viewModel.loadStreams()
+
+        // No favorites yet: plain alphabetical order.
+        #expect(viewModel.streams == [[streams[1], streams[2], streams[0]]])
+        #expect(viewModel.isFavorite(streams[0]) == false)
+
+        viewModel.toggleFavorite(streams[0]) // "Cd"
+        #expect(viewModel.isFavorite(streams[0]) == true)
+        #expect(item.settings?.favorites.count == 1)
+
+        await viewModel.loadStreams()
+        // Favorite "Cd" first, the rest alphabetical.
+        #expect(viewModel.streams == [[streams[0], streams[1], streams[2]]])
+
+        viewModel.toggleFavorite(streams[0])
+        #expect(viewModel.isFavorite(streams[0]) == false)
+        #expect(item.settings?.favorites.isEmpty == true)
+    }
+
     @Test func streamsNoOrder() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(

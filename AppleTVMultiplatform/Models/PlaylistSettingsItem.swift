@@ -9,6 +9,7 @@ final class PlaylistSettingsItem {
     var views: [String: Int] = [:] // Key is HMAC(title)
     var recent: [String: Date] = [:] // Key is HMAC(title)
     var encrypted: [String: String] = [:] // Key is HMAC(title), Value is AES-GCM
+    var favorites: [String] = [] // HMAC(title) of favorite streams
 
     init(order: String?) {
         self.order = order
@@ -22,6 +23,7 @@ extension PlaylistSettingsItem: Codable {
         case views
         case recent
         case encrypted
+        case favorites
     }
 
     convenience init(from decoder: any Decoder) throws {
@@ -31,6 +33,7 @@ extension PlaylistSettingsItem: Codable {
         self.views = try container.decodeIfPresent([String: Int].self, forKey: .views) ?? [:]
         self.recent = try container.decodeIfPresent([String: Date].self, forKey: .recent) ?? [:]
         self.encrypted = try container.decodeIfPresent([String: String].self, forKey: .encrypted) ?? [:]
+        self.favorites = try container.decodeIfPresent([String].self, forKey: .favorites) ?? []
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -39,6 +42,7 @@ extension PlaylistSettingsItem: Codable {
         try container.encode(views, forKey: .views)
         try container.encode(recent, forKey: .recent)
         try container.encode(encrypted, forKey: .encrypted)
+        try container.encode(favorites, forKey: .favorites)
     }
 }
 
@@ -60,6 +64,7 @@ extension PlaylistSettingsItem {
         case descending
         case mostViewed
         case recentViewed
+        case favorites
 
         var title: String {
             switch self {
@@ -68,6 +73,7 @@ extension PlaylistSettingsItem {
             case .descending: return String(localized: "Reverse Alphabetical")
             case .mostViewed: return String(localized: "Most Viewed")
             case .recentViewed: return String(localized: "Recently Viewed")
+            case .favorites: return String(localized: "Favorites First")
             }
         }
     }

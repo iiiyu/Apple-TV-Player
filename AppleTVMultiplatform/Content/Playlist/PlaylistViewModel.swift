@@ -14,6 +14,7 @@ final class PlaylistViewModel {
     let content: PlaylistItem.Content
 
     private(set) var streams: [[PlaylistParser.Stream]] = []
+    private(set) var favoriteHmacs: Set<String> = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
     private(set) var progress: String?
@@ -106,6 +107,7 @@ final class PlaylistViewModel {
                 return
             }
             let order = playlistItem?.settings?.orderType ?? .none
+            favoriteHmacs = Set(settings.favorites)
             logger.info("Sorting streams with '\(order)'", private: content.id)
             let measure = await measureTime { @MainActor [self] in
                 switch order {
@@ -134,6 +136,22 @@ final class PlaylistViewModel {
                         [streams.sorted(by: { left, right in
                             return self.title(for: left) > self.title(for: right)
                         })]
+                    }.value
+                case .favorites:
+                    self.streams = await Task<[[PlaylistParser.Stream]], Never>.detached(priority: .high) { [favoriteHmacs] in
+                        let sorted = streams.sorted(by: { left, right in
+                            self.title(for: left) < self.title(for: right)
+                        })
+                        var favorites: [PlaylistParser.Stream] = []
+                        var others: [PlaylistParser.Stream] = []
+                        for stream in sorted {
+                            if favoriteHmacs.contains(self.hmacValue(for: stream)) {
+                                favorites.append(stream)
+                            } else {
+                                others.append(stream)
+                            }
+                        }
+                        return [favorites + others]
                     }.value
                 case .recentViewed, .mostViewed:
                     let expectOrder: [String]
@@ -175,6 +193,38 @@ final class PlaylistViewModel {
         return (tvgName?.isEmpty == false ? tvgName : nil) ?? stream.title
     }
 
+    // HMAC-only variant of `encode` for lookups that never need the ciphertext.
+    nonisolated func hmacValue(for stream: PlaylistParser.Stream) -> String {
+        let title = title(for: stream)
+        guard let sortingKey else {
+            return title
+        }
+        return (try? crypto.hmac(title, key: sortingKey)) ?? title
+    }
+
+    func isFavorite(_ stream: PlaylistParser.Stream) -> Bool {
+        favoriteHmacs.contains(hmacValue(for: stream))
+    }
+
+    func toggleFavorite(_ stream: PlaylistParser.Stream) {
+        guard let playlist, let settings = playlist.settings else {
+            return
+        }
+        let hmac = hmacValue(for: stream)
+        if favoriteHmacs.contains(hmac) {
+            favoriteHmacs.remove(hmac)
+            settings.favorites.removeAll { $0 == hmac }
+        } else {
+            favoriteHmacs.insert(hmac)
+            settings.favorites.append(hmac)
+        }
+        if settings.orderType == .favorites {
+            Task {
+                await loadStreams()
+            }
+        }
+    }
+
     struct CurrentProgram: Equatable, Sendable {
         let title: String
         // How far the program has aired, clamped to 0...1.
@@ -210,7 +260,7 @@ final class PlaylistViewModel {
 
     func stream(matchingLastWatched hmac: String) -> PlaylistParser.Stream? {
         for group in streams {
-            for stream in group where encode(title: title(for: stream)).hmac == hmac {
+            for stream in group where hmacValue(for: stream) == hmac {
                 return stream
             }
         }

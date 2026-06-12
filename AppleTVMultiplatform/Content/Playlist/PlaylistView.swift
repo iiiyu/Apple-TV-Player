@@ -88,6 +88,9 @@ struct PlaylistView: View {
                                 .frame(height: 88)
                         }
                         .focused($isStreamFocused, equals: stream)
+                        .contextMenu {
+                            favoriteButton(for: stream)
+                        }
                     }
                 } header: {
                     if showHeader, let title = streams.first?.groupTitle {
@@ -130,6 +133,15 @@ struct PlaylistView: View {
                             .tag(stream)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: 56)
+                            .contextMenu {
+                                favoriteButton(for: stream)
+                            }
+#if os(iOS)
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                favoriteButton(for: stream)
+                                    .tint(.yellow)
+                            }
+#endif
                     }
                 } header: {
                     if showHeader, let title = streams.first?.groupTitle {
@@ -236,8 +248,21 @@ struct PlaylistView: View {
             logo: { await viewModel.iconURL(for: stream) },
             title: { viewModel.title(for: stream) },
             currentProgram: { await viewModel.currentProgram(for: stream) },
+            isFavorite: { viewModel.isFavorite(stream) },
             reloadCurrentProgram: $reloadCurrentProgram
         )
+    }
+
+    private func favoriteButton(for stream: PlaylistParser.Stream) -> some View {
+        Button {
+            viewModel.toggleFavorite(stream)
+        } label: {
+            if viewModel.isFavorite(stream) {
+                Label("Remove from Favorites", systemImage: "star.slash")
+            } else {
+                Label("Add to Favorites", systemImage: "star")
+            }
+        }
     }
 
     @ViewBuilder
@@ -282,6 +307,7 @@ private struct StreamRowView: View {
     let logo: @MainActor () async -> String?
     let title: @MainActor () -> String
     let currentProgram: @MainActor () async -> PlaylistViewModel.CurrentProgram?
+    let isFavorite: @MainActor () -> Bool
     @Binding var reloadCurrentProgram: UUID
     @State private var icon: String?
     @State private var program: PlaylistViewModel.CurrentProgram?
@@ -304,17 +330,28 @@ private struct StreamRowView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(title())
+                HStack(spacing: 6) {
+                    Text(title())
 #if os(tvOS)
-                    .font(.system(size: 38, weight: .regular))
+                        .font(.system(size: 38, weight: .regular))
 #else
-                    .font(.headline)
+                        .font(.headline)
 #endif
-                    .task {
-                        program = await currentProgram()
-                        icon = await logo()
+                        .task {
+                            program = await currentProgram()
+                            icon = await logo()
+                        }
+                        .id(reloadCurrentProgram)
+                    if isFavorite() {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+#if os(tvOS)
+                            .font(.system(size: 24))
+#else
+                            .font(.caption)
+#endif
                     }
-                    .id(reloadCurrentProgram)
+                }
                 if let program {
                     Text(program.title)
 #if os(tvOS)
