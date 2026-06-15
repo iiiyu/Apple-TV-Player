@@ -78,6 +78,17 @@ struct StreamPlayerControllerTests {
         #expect(!StreamPlayerController.isForbiddenResourceError(error))
     }
 
+    @MainActor
+    @Test func forbiddenResourceErrorDoesNotMatchBareCoreMediaHTTPError() {
+        let error = NSError(
+            domain: "CoreMediaErrorDomain",
+            code: -12660,
+            userInfo: [NSLocalizedDescriptionKey: "The operation could not be completed."]
+        )
+
+        #expect(!StreamPlayerController.isForbiddenResourceError(error))
+    }
+
     @Test func streamLatencyProbeOnlyAcceptsHTTPURLs() throws {
         #expect(StreamLatencyProbe.isProbeable(try #require(URL(string: "https://example.com/live.m3u8"))))
         #expect(StreamLatencyProbe.isProbeable(try #require(URL(string: "http://example.com/live.m3u8"))))

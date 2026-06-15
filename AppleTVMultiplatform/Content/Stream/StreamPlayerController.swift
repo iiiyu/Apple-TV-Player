@@ -124,13 +124,20 @@ final class StreamPlayerController {
         guard recoveryTask == nil, terminalPlaybackError == nil else { return }
         logger.info("Stream stalled", private: activeURL?.absoluteString ?? "")
         recoveryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(10))
+            try? await Task.sleep(for: .seconds(5))
             guard let self, !Task.isCancelled else { return }
             recoveryTask = nil
             // Still stuck buffering after the grace period. A user initiated
             // pause is .paused and is left alone.
             if player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
                 logger.info("Stream did not recover from stall, reloading", private: activeURL?.absoluteString ?? "")
+                if let error = player.currentItem?.error {
+                    logger.error(error, private: activeURL?.absoluteString ?? originalURL?.absoluteString ?? "")
+                    if Self.isForbiddenResourceError(error) {
+                        presentTerminalPlaybackError(Self.forbiddenResourceMessage)
+                        return
+                    }
+                }
                 consecutiveFailures += 1
                 load()
             }
@@ -206,9 +213,6 @@ final class StreamPlayerController {
     static func isForbiddenResourceError(_ error: Error) -> Bool {
         errorChain(for: error).contains { current in
             if current.domain == NSURLErrorDomain, current.code == -1102 {
-                return true
-            }
-            if current.domain == "CoreMediaErrorDomain", current.code == -12660 {
                 return true
             }
             let description = current.localizedDescription
