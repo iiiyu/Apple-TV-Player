@@ -526,6 +526,7 @@
 				820B7D6E2F5F2C5C0043DE13 /* Sources */,
 				820B7D6F2F5F2C5C0043DE13 /* Frameworks */,
 				820B7D702F5F2C5C0043DE13 /* Resources */,
+				82A0E0112FA0000000000001 /* Embed SGPlayer Framework */,
 			);
 			buildRules = (
 			);
@@ -684,6 +685,32 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		82A0E0112FA0000000000001 /* Embed SGPlayer Framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/embed_sgplayer.sh",
+				"$(SRCROOT)/vendor/SGPlayer/iOS/SGPlayer.framework",
+				"$(SRCROOT)/vendor/SGPlayer/macOS/SGPlayer.framework",
+				"$(SRCROOT)/vendor/SGPlayer/tvOS/SGPlayer.framework",
+			);
+			name = "Embed SGPlayer Framework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/SGPlayer.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "sh \"${SRCROOT}/scripts/embed_sgplayer.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		820B7D6E2F5F2C5C0043DE13 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -749,6 +776,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AppleTVMultiplatform/Resources/Info.plist;
@@ -777,6 +805,33 @@
 				"MARKETING_VERSION[sdk=iphoneos*]" = 1.0;
 				"MARKETING_VERSION[sdk=iphonesimulator*]" = 1.0;
 				"MARKETING_VERSION[sdk=macosx*]" = 1.0;
+				"OTHER_LDFLAGS[sdk=appletvos*]" = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					VideoToolbox,
+					"-lz",
+					"-force_load",
+					"$(SRCROOT)/vendor/SGPlayer/tvOS/SGPlayer.framework/SGPlayer",
+				);
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					VideoToolbox,
+					"-lz",
+					"-force_load",
+					"$(SRCROOT)/vendor/SGPlayer/iOS/SGPlayer.framework/SGPlayer",
+				);
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					VideoToolbox,
+					"-lz",
+					"-force_load",
+					"$(SRCROOT)/vendor/SGPlayer/macOS/SGPlayer.framework/SGPlayer",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ohmyapps.hiplayer.debug;
 				PRODUCT_NAME = HiPlayer;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -822,6 +877,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AppleTVMultiplatform/Resources/Info.plist;
@@ -850,6 +906,33 @@
 				"MARKETING_VERSION[sdk=iphoneos*]" = 1.0;
 				"MARKETING_VERSION[sdk=iphonesimulator*]" = 1.0;
 				"MARKETING_VERSION[sdk=macosx*]" = 1.0;
+				"OTHER_LDFLAGS[sdk=appletvos*]" = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					VideoToolbox,
+					"-lz",
+					"-force_load",
+					"$(SRCROOT)/vendor/SGPlayer/tvOS/SGPlayer.framework/SGPlayer",
+				);
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					VideoToolbox,
+					"-lz",
+					"-force_load",
+					"$(SRCROOT)/vendor/SGPlayer/iOS/SGPlayer.framework/SGPlayer",
+				);
+				"OTHER_LDFLAGS[sdk=macosx*]" = (
+					"$(inherited)",
+					"-ObjC",
+					"-framework",
+					VideoToolbox,
+					"-lz",
+					"-force_load",
+					"$(SRCROOT)/vendor/SGPlayer/macOS/SGPlayer.framework/SGPlayer",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.ohmyapps.hiplayer;
 				PRODUCT_NAME = HiPlayer;
 				PROVISIONING_PROFILE_SPECIFIER = "";

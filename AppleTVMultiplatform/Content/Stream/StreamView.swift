@@ -14,9 +14,11 @@ struct StreamView: View {
     @State private var showMediaInfo = false
     @State private var playbackErrorMessage: String?
     @State private var playbackReloadID = UUID()
+    @State private var useSGPlayerCompatibility = SGPlayerCompatibility.isAvailable
 #if os(tvOS)
     @State private var showFullScreen = false
     @State private var tvOSPlayer: TvOSPlayer
+    @State private var sgPlayer: SGPlayerCompatibilitySession?
     @State private var reloadProgramGuide = UUID()
     @Binding private var reselectStream: Bool
     @Binding var focusedStream: PlaylistParser.Stream?
@@ -30,6 +32,7 @@ struct StreamView: View {
     ) {
         _viewModel = State(wrappedValue: StreamViewModel(content: content, stream: stream))
         _tvOSPlayer = State(wrappedValue: TvOSPlayer(urlString: stream.url))
+        _sgPlayer = State(wrappedValue: SGPlayerCompatibilitySession(urlString: stream.url))
         _reselectStream = reselectStream
         _focusedStream = focusedStream
         _reloadCurrentProgram = reloadCurrentProgram
@@ -95,6 +98,13 @@ struct StreamView: View {
         .toolbar {
 #if !os(tvOS)
             ToolbarItem {
+                Button(useSGPlayerCompatibility ? "Use AVPlayer" : "Use SGPlayer", systemImage: "play.rectangle") {
+                    togglePlaybackEngine()
+                }
+                .accessibilityIdentifier("stream-player-engine")
+                .help(useSGPlayerCompatibility ? "Switch playback to AVPlayer" : "Switch playback to SGPlayer")
+            }
+            ToolbarItem {
                 Button("Stream Info", systemImage: "info.circle") {
                     presentMediaInfo()
                 }
@@ -111,10 +121,23 @@ struct StreamView: View {
 #if os(tvOS)
         .fullScreenCover(isPresented: $showFullScreen, onDismiss: {
             reloadCurrentProgram = .init()
+            if useSGPlayerCompatibility {
+                playbackReloadID = UUID()
+            }
         }) {
             let _ = logger.info("Presenting full screen from floating player", private: viewModel.stream.title)
             ZStack {
-                tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+                if useSGPlayerCompatibility, let sgPlayer {
+                    SGPlayerCompatibilityView(
+                        urlString: viewModel.stream.url,
+                        sharedSession: sgPlayer,
+                        onPlaybackError: handlePlaybackError
+                    )
+                    .id(playbackReloadID)
+                    .ignoresSafeArea()
+                } else {
+                    tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+                }
                 if let playbackErrorMessage {
                     playbackErrorView(playbackErrorMessage)
                 }
@@ -122,10 +145,23 @@ struct StreamView: View {
         }
         .fullScreenCover(isPresented: $reselectStream, onDismiss: {
             reloadCurrentProgram = .init()
+            if useSGPlayerCompatibility {
+                playbackReloadID = UUID()
+            }
         }) {
             let _ = logger.info("Presenting full screen from double select", private: viewModel.stream.title)
             ZStack {
-                tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+                if useSGPlayerCompatibility, let sgPlayer {
+                    SGPlayerCompatibilityView(
+                        urlString: viewModel.stream.url,
+                        sharedSession: sgPlayer,
+                        onPlaybackError: handlePlaybackError
+                    )
+                    .id(playbackReloadID)
+                    .ignoresSafeArea()
+                } else {
+                    tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+                }
                 if let playbackErrorMessage {
                     playbackErrorView(playbackErrorMessage)
                 }
@@ -159,6 +195,11 @@ struct StreamView: View {
             HStack(spacing: 10) {
                 Text(viewModel.title)
                 Text(viewModel.currentTimeText(at: now))
+                Button("", systemImage: "play.rectangle") {
+                    togglePlaybackEngine()
+                }
+                .accessibilityIdentifier("stream-player-engine")
+                .accessibilityLabel(useSGPlayerCompatibility ? "Use AVPlayer" : "Use SGPlayer")
                 Button("", systemImage: "info.circle") {
                     presentMediaInfo()
                 }
@@ -198,27 +239,53 @@ struct StreamView: View {
     @ViewBuilder
     private func platformVideoPlayer() -> some View {
 #if os(macOS)
-        MacOsPlayerView(
-            urlString: viewModel.stream.url,
-            onPlaybackError: handlePlaybackError
-        )
-        .id(playbackReloadID)
+        if useSGPlayerCompatibility {
+            SGPlayerCompatibilityView(
+                urlString: viewModel.stream.url,
+                onPlaybackError: handlePlaybackError
+            )
+            .id(playbackReloadID)
+        } else {
+            MacOsPlayerView(
+                urlString: viewModel.stream.url,
+                onPlaybackError: handlePlaybackError
+            )
+            .id(playbackReloadID)
+        }
 #elseif os(tvOS)
         HStack(spacing: 0) {
             Button {
                 showFullScreen = true
             } label: {
-                tvOSPlayer.compactView(onPlaybackError: handlePlaybackError)
+                if useSGPlayerCompatibility, let sgPlayer {
+                    SGPlayerCompatibilityView(
+                        urlString: viewModel.stream.url,
+                        widthMultiplier: homeTvOSStreamLayout ? 1 : 2.8 / 3.0,
+                        sharedSession: sgPlayer,
+                        onPlaybackError: handlePlaybackError
+                    )
+                    .id(playbackReloadID)
+                } else {
+                    tvOSPlayer.compactView(onPlaybackError: handlePlaybackError)
+                }
             }
             .buttonStyle(.card)
         }
         .ignoresSafeArea()
 #else
-        iOSPlayerView(
-            urlString: viewModel.stream.url,
-            onPlaybackError: handlePlaybackError
-        )
-        .id(playbackReloadID)
+        if useSGPlayerCompatibility {
+            SGPlayerCompatibilityView(
+                urlString: viewModel.stream.url,
+                onPlaybackError: handlePlaybackError
+            )
+            .id(playbackReloadID)
+        } else {
+            iOSPlayerView(
+                urlString: viewModel.stream.url,
+                onPlaybackError: handlePlaybackError
+            )
+            .id(playbackReloadID)
+        }
 #endif
     }
 
@@ -242,10 +309,34 @@ struct StreamView: View {
         playbackErrorMessage = message
     }
 
+    private func togglePlaybackEngine() {
+        playbackErrorMessage = nil
+
+        if useSGPlayerCompatibility {
+            useSGPlayerCompatibility = false
+            playbackReloadID = UUID()
+            return
+        }
+
+        guard SGPlayerCompatibility.isAvailable else {
+            playbackErrorMessage = String(localized: "SGPlayer.framework is not bundled with this app.")
+            return
+        }
+
+        useSGPlayerCompatibility = true
+        playbackReloadID = UUID()
+    }
+
     private func retryPlayback() {
         playbackErrorMessage = nil
 #if os(tvOS)
-        tvOSPlayer.retry()
+        if useSGPlayerCompatibility {
+            playbackReloadID = UUID()
+            sgPlayer?.replace(with: viewModel.stream.url)
+            sgPlayer?.play()
+        } else {
+            tvOSPlayer.retry()
+        }
 #else
         playbackReloadID = UUID()
 #endif
