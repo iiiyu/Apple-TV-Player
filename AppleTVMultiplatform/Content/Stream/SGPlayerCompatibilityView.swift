@@ -148,21 +148,8 @@ final class SGPlayerCompatibilitySession {
 private enum SGPlayerRuntime {
 
     static var playerClass: AnyClass? {
-        loadBundledFrameworkIfNeeded()
         return NSClassFromString("SGPlayer") ?? NSClassFromString("SGPlayer.SGPlayer")
     }
-
-    private static func loadBundledFrameworkIfNeeded() {
-        _ = loadFrameworkOnce
-    }
-
-    private static let loadFrameworkOnce: Void = {
-        guard NSClassFromString("SGPlayer") == nil else { return }
-        guard let frameworksURL = Bundle.main.privateFrameworksURL else { return }
-
-        let frameworkURL = frameworksURL.appendingPathComponent("SGPlayer.framework")
-        Bundle(url: frameworkURL)?.load()
-    }()
 }
 
 #if os(macOS)
@@ -219,7 +206,7 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
 
         func attach(to view: NSView, urlString: String, onPlaybackError: @escaping (String?) -> Void) {
             guard let session else {
-                onPlaybackError(String(localized: "SGPlayer.framework is not bundled with this app."))
+                onPlaybackError(String(localized: "SGPlayer is not available in this build."))
                 return
             }
 
@@ -288,7 +275,7 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
 
         func attach(to view: UIView, urlString: String, onPlaybackError: @escaping (String?) -> Void) {
             guard let session else {
-                onPlaybackError(String(localized: "SGPlayer.framework is not bundled with this app."))
+                onPlaybackError(String(localized: "SGPlayer is not available in this build."))
                 return
             }
 

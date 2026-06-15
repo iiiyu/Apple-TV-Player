@@ -306,7 +306,10 @@ struct StreamView: View {
     }
 
     private func handlePlaybackError(_ message: String?) {
-        playbackErrorMessage = message
+        Task { @MainActor in
+            guard playbackErrorMessage != message else { return }
+            playbackErrorMessage = message
+        }
     }
 
     private func togglePlaybackEngine() {
@@ -319,7 +322,7 @@ struct StreamView: View {
         }
 
         guard SGPlayerCompatibility.isAvailable else {
-            playbackErrorMessage = String(localized: "SGPlayer.framework is not bundled with this app.")
+            playbackErrorMessage = String(localized: "SGPlayer is not available in this build.")
             return
         }
 

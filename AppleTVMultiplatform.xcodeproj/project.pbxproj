@@ -526,7 +526,6 @@
 				820B7D6E2F5F2C5C0043DE13 /* Sources */,
 				820B7D6F2F5F2C5C0043DE13 /* Frameworks */,
 				820B7D702F5F2C5C0043DE13 /* Resources */,
-				82A0E0112FA0000000000001 /* Embed SGPlayer Framework */,
 			);
 			buildRules = (
 			);
@@ -685,32 +684,6 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		82A0E0112FA0000000000001 /* Embed SGPlayer Framework */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/scripts/embed_sgplayer.sh",
-				"$(SRCROOT)/vendor/SGPlayer/iOS/SGPlayer.framework",
-				"$(SRCROOT)/vendor/SGPlayer/macOS/SGPlayer.framework",
-				"$(SRCROOT)/vendor/SGPlayer/tvOS/SGPlayer.framework",
-			);
-			name = "Embed SGPlayer Framework";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/SGPlayer.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "sh \"${SRCROOT}/scripts/embed_sgplayer.sh\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXSourcesBuildPhase section */
 		820B7D6E2F5F2C5C0043DE13 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -760,7 +733,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AppleTVMultiplatform/Resources/AppleTVMultiplatform.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = BW6R7QC2YP;
 				ENABLE_APP_SANDBOX = YES;
@@ -861,7 +834,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AppleTVMultiplatform/Resources/AppleTVMultiplatform.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = BW6R7QC2YP;
 				ENABLE_APP_SANDBOX = YES;
