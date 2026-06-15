@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 @testable import HiPlayer
@@ -101,6 +102,25 @@ struct StreamPlayerControllerTests {
         #expect(StreamPlayerController.shouldRecoverFromErrorLog(statusCode: -12860, domain: "CoreMediaErrorDomain", comment: nil))
         #expect(StreamPlayerController.shouldRecoverFromErrorLog(statusCode: 500, domain: "HTTP", comment: "segment failed"))
         #expect(!StreamPlayerController.shouldRecoverFromErrorLog(statusCode: 0, domain: nil, comment: nil))
+    }
+
+    @MainActor
+    @Test func unsupportedMediaFormatErrorMatchesCannotOpenErrorChain() {
+        let underlying = NSError(
+            domain: NSOSStatusErrorDomain,
+            code: -12847
+        )
+        let error = NSError(
+            domain: AVFoundationErrorDomain,
+            code: -11828,
+            userInfo: [
+                NSLocalizedDescriptionKey: "Cannot Open",
+                NSLocalizedFailureReasonErrorKey: "This media format is not supported.",
+                NSUnderlyingErrorKey: underlying
+            ]
+        )
+
+        #expect(StreamPlayerController.isUnsupportedMediaFormatError(error))
     }
 
     @Test func streamLatencyProbeOnlyAcceptsHTTPURLs() throws {

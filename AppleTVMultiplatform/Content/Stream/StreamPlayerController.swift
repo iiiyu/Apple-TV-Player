@@ -21,6 +21,7 @@ final class StreamPlayerController {
     private var playerObservers: Set<AnyCancellable> = []
     private var itemObservers: Set<AnyCancellable> = []
     private var recoveryTask: Task<Void, Never>?
+    private var videoStartupTask: Task<Void, Never>?
     private var playbackTimeObserver: PlaybackTimeObserver?
     private var consecutiveFailures = 0
     private var didAttemptHLSFallback = false
@@ -70,6 +71,7 @@ final class StreamPlayerController {
 
     deinit {
         recoveryTask?.cancel()
+        videoStartupTask?.cancel()
         let playbackTimeObserver = playbackTimeObserver
         let player = player
         Task { @MainActor in
@@ -129,6 +131,7 @@ final class StreamPlayerController {
 
         player.replaceCurrentItem(with: item)
         player.play()
+        scheduleVideoStartupCheck(for: item, sourceURL: activeURL)
     }
 
     private func scheduleRecovery(after error: Error?) {
@@ -139,6 +142,10 @@ final class StreamPlayerController {
             logger.error(error, private: activeURL?.absoluteString ?? originalURL?.absoluteString ?? "")
             if Self.isForbiddenResourceError(error) {
                 presentTerminalPlaybackError(Self.forbiddenResourceMessage)
+                return
+            }
+            if Self.isUnsupportedMediaFormatError(error) {
+                presentTerminalPlaybackError(Self.unsupportedStreamFormatMessage)
                 return
             }
             if Self.isRangeWithoutContentLengthError(error), switchToHLSFallback() {
@@ -181,6 +188,10 @@ final class StreamPlayerController {
                 presentTerminalPlaybackError(Self.forbiddenResourceMessage)
                 return
             }
+            if Self.isUnsupportedMediaFormatError(error) {
+                presentTerminalPlaybackError(Self.unsupportedStreamFormatMessage)
+                return
+            }
             if Self.isRangeWithoutContentLengthError(error), switchToHLSFallback() {
                 return
             }
@@ -210,6 +221,8 @@ final class StreamPlayerController {
     func retry() {
         recoveryTask?.cancel()
         recoveryTask = nil
+        videoStartupTask?.cancel()
+        videoStartupTask = nil
         consecutiveFailures = 0
         didAttemptHLSFallback = false
         activeURL = originalURL
@@ -249,6 +262,44 @@ final class StreamPlayerController {
         item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
         item.preferredForwardBufferDuration = 5
         return item
+    }
+
+    private func scheduleVideoStartupCheck(for item: AVPlayerItem, sourceURL: URL) {
+        videoStartupTask?.cancel()
+        videoStartupTask = Task { [weak self, weak item] in
+            try? await Task.sleep(for: .seconds(Self.videoStartupGracePeriod))
+            guard let self, let item, !Task.isCancelled else { return }
+            await inspectVideoStartup(for: item, sourceURL: sourceURL)
+        }
+    }
+
+    private func inspectVideoStartup(for item: AVPlayerItem, sourceURL: URL) async {
+        guard terminalPlaybackError == nil,
+              player.currentItem === item,
+              player.timeControlStatus != .paused else {
+            return
+        }
+
+        let tracks = (try? await item.asset.load(.tracks)) ?? []
+        let videoTracks = tracks.filter { $0.mediaType == .video }
+        let audioTracks = tracks.filter { $0.mediaType == .audio }
+        guard !audioTracks.isEmpty else { return }
+
+        let presentationSize = item.presentationSize
+        let hasVisibleVideo = presentationSize.width > 0 && presentationSize.height > 0
+        guard !hasVisibleVideo else { return }
+
+        let codec = await Self.codecText(for: videoTracks.first)
+        logger.info(
+            "Stream audio is playing but no visible video track is available",
+            private: "\(sourceURL.absoluteString) codec=\(codec ?? "unknown")"
+        )
+
+        if switchToHLSFallback() {
+            return
+        }
+
+        presentTerminalPlaybackError(Self.unsupportedVideoMessage(codec: codec))
     }
 
     private func handleNewErrorLogEntry(from item: AVPlayerItem?) {
@@ -327,6 +378,23 @@ final class StreamPlayerController {
         }
     }
 
+    static func isUnsupportedMediaFormatError(_ error: Error) -> Bool {
+        errorChain(for: error).contains { current in
+            if current.domain == AVFoundationErrorDomain, current.code == AVError.Code.decoderNotFound.rawValue {
+                return true
+            }
+            if current.domain == AVFoundationErrorDomain, current.code == -11828 {
+                return true
+            }
+            if current.domain == NSOSStatusErrorDomain, current.code == -12847 {
+                return true
+            }
+            let description = current.localizedDescription
+            return description.localizedCaseInsensitiveContains("media format is not supported")
+                || description.localizedCaseInsensitiveContains("Cannot Open")
+        }
+    }
+
     static func isForbiddenResourceLog(statusCode: Int, comment: String?) -> Bool {
         statusCode == 403
             || comment?.localizedCaseInsensitiveContains("HTTP 403") == true
@@ -382,6 +450,17 @@ final class StreamPlayerController {
         return components?.url
     }
 
+    private static func codecText(for track: AVAssetTrack?) async -> String? {
+        guard
+            let track,
+            let formatDescription = (try? await track.load(.formatDescriptions))?.first
+        else {
+            return nil
+        }
+
+        return CMFormatDescriptionGetMediaSubType(formatDescription).fourCCString
+    }
+
 #if os(macOS)
     private static let didBecomeActiveNotification = NSApplication.didBecomeActiveNotification
 #else
@@ -409,14 +488,28 @@ private extension StreamPlayerController {
     static let waitingRecoveryDelay: TimeInterval = 12
     static let playbackProgressTimeout: TimeInterval = 20
     static let playbackProgressObservationInterval = CMTime(seconds: 2, preferredTimescale: 1)
+    static let videoStartupGracePeriod: TimeInterval = 15
 
     static var forbiddenResourceMessage: String {
         String(localized: "You do not have permission to access this channel. Check your playlist, subscription, or server access.")
     }
 
+    static var unsupportedStreamFormatMessage: String {
+        String(localized: "This stream format is not supported by AVPlayer on this device. Try another source or a lower-quality stream.")
+    }
+
+    static func unsupportedVideoMessage(codec: String?) -> String {
+        guard let codec, !codec.isEmpty else {
+            return String(localized: "This channel's video format is not supported by AVPlayer on this device. Try another source or a lower-quality stream.")
+        }
+        return String(format: String(localized: "This channel uses %@ video, which AVPlayer cannot display on this device. Try another source or a lower-quality stream."), codec)
+    }
+
     func presentTerminalPlaybackError(_ message: String) {
         recoveryTask?.cancel()
         recoveryTask = nil
+        videoStartupTask?.cancel()
+        videoStartupTask = nil
         terminalPlaybackError = message
         player.pause()
         updatePlaybackError(message)
@@ -486,5 +579,18 @@ private extension StreamPlayerController {
         }
 
         return chain
+    }
+}
+
+private extension FourCharCode {
+
+    var fourCCString: String {
+        let bytes: [UInt8] = [
+            UInt8((self >> 24) & 0xff),
+            UInt8((self >> 16) & 0xff),
+            UInt8((self >> 8) & 0xff),
+            UInt8(self & 0xff)
+        ]
+        return String(bytes: bytes, encoding: .macOSRoman) ?? "\(self)"
     }
 }
