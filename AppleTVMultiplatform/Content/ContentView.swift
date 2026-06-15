@@ -181,6 +181,19 @@ struct ContentView: View {
         .navigationTitle(String(localized: "Playlists"))
 #endif
         .toolbar {
+#if os(macOS)
+            ToolbarItem {
+                Button("Acknowledgements", systemImage: "info.circle") {
+                    showAcknowledgements = true
+                }
+                .accessibilityIdentifier("acknowledgements")
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                AddButtonView {
+                    viewModel.onAddPlaylist()
+                }
+            }
+#else
             ToolbarItem {
                 AddButtonView {
                     viewModel.onAddPlaylist()
@@ -192,6 +205,7 @@ struct ContentView: View {
                 }
                 .accessibilityIdentifier("acknowledgements")
             }
+#endif
         }
         .id(viewModel.playlistListUpdate)
     }
