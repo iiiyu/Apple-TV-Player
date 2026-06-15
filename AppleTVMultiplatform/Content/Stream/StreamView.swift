@@ -253,31 +253,35 @@ struct StreamView: View {
 #endif
     }
 
+    @ViewBuilder
     private func programList() -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                if viewModel.didLoadPrograms, viewModel.displayProgram.isEmpty {
-                    ContentUnavailableView(
-                        "No Program Guide",
-                        systemImage: "calendar.badge.exclamationmark",
-                        description: Text("No guide information is available for this channel.")
-                    )
-                } else {
+        if viewModel.didLoadPrograms, viewModel.displayProgram.isEmpty {
+            ContentUnavailableView(
+                "No Program Guide",
+                systemImage: "calendar.badge.exclamationmark",
+                description: Text("No guide information is available for this channel.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .accessibilityIdentifier("program-list")
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(viewModel.displayProgram) { displayedProgram in
 #if os(tvOS)
-                        Button {
-                        } label: {
-                            program(displayedProgram)
-                        }
-                        .buttonStyle(.borderless)
-#else
+                    Button {
+                    } label: {
                         program(displayedProgram)
+                    }
+                    .buttonStyle(.borderless)
+#else
+                    program(displayedProgram)
 #endif
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("program-list")
         }
-        .accessibilityIdentifier("program-list")
     }
 
     private func program(_ displayedProgram: StreamViewModel.DisplayProgram) -> some View {
