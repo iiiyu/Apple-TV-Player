@@ -201,9 +201,7 @@ struct StreamView: View {
         MacOsPlayerView(
             urlString: viewModel.stream.url,
             onPlaybackError: handlePlaybackError
-        ) {
-            reloadCurrentProgram = .init()
-        }
+        )
         .id(playbackReloadID)
 #elseif os(tvOS)
         HStack(spacing: 0) {
@@ -413,31 +411,26 @@ private struct MacOsPlayerView: NSViewRepresentable {
 
     let urlString: String
     let onPlaybackError: (String?) -> Void
-    let onExitFullScreen: () -> Void
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
+    func makeNSView(context: Context) -> MacOsPlayerLayerView {
+        let view = MacOsPlayerLayerView()
         view.player = context.coordinator.controller.player
-        view.showsFullScreenToggleButton = true
-        // The inline controls instantiate AVKit's embedded volume slider, which
-        // can emit unsatisfiable constraints on current macOS SDKs.
-        view.controlsStyle = .minimal
-        view.allowsPictureInPicturePlayback = true
-        view.delegate = context.coordinator
         return view
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+    func updateNSView(_ nsView: MacOsPlayerLayerView, context: Context) {
+        if nsView.player !== context.coordinator.controller.player {
+            nsView.player = context.coordinator.controller.player
+        }
         nsView.player?.play()
     }
 
-    func makeCoordinator() -> PlayerDelegate {
-        return PlayerDelegate(
+    func makeCoordinator() -> Coordinator {
+        return Coordinator(
             controller: StreamPlayerController(
                 urlString: urlString,
                 onPlaybackError: onPlaybackError
-            ),
-            onExitFullScreen: onExitFullScreen
+            )
         )
     }
 
@@ -451,20 +444,48 @@ private struct MacOsPlayerView: NSViewRepresentable {
         return .init(width: width, height: width * (9.0 / 16.0))
     }
 
-    class PlayerDelegate: NSObject, AVPlayerViewDelegate {
+    final class Coordinator {
 
         let controller: StreamPlayerController
-        let onExitFullScreen: () -> Void
 
-        init(controller: StreamPlayerController, onExitFullScreen: @escaping () -> Void) {
+        init(controller: StreamPlayerController) {
             self.controller = controller
-            self.onExitFullScreen = onExitFullScreen
-            super.init()
         }
+    }
+}
 
-        func playerViewWillExitFullScreen(_ playerView: AVPlayerView) {
-            onExitFullScreen()
+private final class MacOsPlayerLayerView: NSView {
+
+    private let playbackLayer = AVPlayerLayer()
+
+    var player: AVPlayer? {
+        get {
+            playbackLayer.player
         }
+        set {
+            playbackLayer.player = newValue
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        playbackLayer.videoGravity = .resizeAspect
+        playbackLayer.backgroundColor = NSColor.black.cgColor
+        layer = playbackLayer
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playbackLayer.frame = bounds
+        CATransaction.commit()
     }
 }
 #elseif os(tvOS)

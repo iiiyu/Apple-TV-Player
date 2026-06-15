@@ -89,6 +89,20 @@ struct StreamPlayerControllerTests {
         #expect(!StreamPlayerController.isForbiddenResourceError(error))
     }
 
+    @MainActor
+    @Test func forbiddenResourceLogMatchesHTTP403() {
+        #expect(StreamPlayerController.isForbiddenResourceLog(statusCode: 403, comment: nil))
+        #expect(StreamPlayerController.isForbiddenResourceLog(statusCode: 0, comment: "HTTP 403: Forbidden"))
+    }
+
+    @MainActor
+    @Test func errorLogRecoverySkipsForbiddenButRetriesTransportErrors() {
+        #expect(!StreamPlayerController.shouldRecoverFromErrorLog(statusCode: 403, domain: "HTTP", comment: nil))
+        #expect(StreamPlayerController.shouldRecoverFromErrorLog(statusCode: -12860, domain: "CoreMediaErrorDomain", comment: nil))
+        #expect(StreamPlayerController.shouldRecoverFromErrorLog(statusCode: 500, domain: "HTTP", comment: "segment failed"))
+        #expect(!StreamPlayerController.shouldRecoverFromErrorLog(statusCode: 0, domain: nil, comment: nil))
+    }
+
     @Test func streamLatencyProbeOnlyAcceptsHTTPURLs() throws {
         #expect(StreamLatencyProbe.isProbeable(try #require(URL(string: "https://example.com/live.m3u8"))))
         #expect(StreamLatencyProbe.isProbeable(try #require(URL(string: "http://example.com/live.m3u8"))))

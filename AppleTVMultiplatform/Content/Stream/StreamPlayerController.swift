@@ -21,9 +21,12 @@ final class StreamPlayerController {
     private var playerObservers: Set<AnyCancellable> = []
     private var itemObservers: Set<AnyCancellable> = []
     private var recoveryTask: Task<Void, Never>?
+    private var playbackTimeObserver: PlaybackTimeObserver?
     private var consecutiveFailures = 0
     private var didAttemptHLSFallback = false
     private var terminalPlaybackError: String?
+    private var lastObservedPlaybackTime: CMTime?
+    private var lastPlaybackProgressDate = Date()
 
     init(urlString: String, onPlaybackError: @escaping (String?) -> Void = { _ in }) {
         self.onPlaybackError = onPlaybackError
@@ -34,9 +37,16 @@ final class StreamPlayerController {
         player.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
+                guard let self else { return }
                 if status == .playing {
-                    self?.consecutiveFailures = 0
-                    self?.clearPlaybackError()
+                    consecutiveFailures = 0
+                    clearPlaybackError()
+                    markPlaybackProgress(at: player.currentTime())
+                } else if status == .waitingToPlayAtSpecifiedRate {
+                    scheduleStallRecovery(
+                        trigger: "player waiting \(player.reasonForWaitingToPlay?.rawValue ?? "unknown")",
+                        delay: Self.waitingRecoveryDelay
+                    )
                 }
             }
             .store(in: &playerObservers)
@@ -47,10 +57,24 @@ final class StreamPlayerController {
                 self?.recoverIfFailed()
             }
             .store(in: &playerObservers)
+
+        playbackTimeObserver = PlaybackTimeObserver(player.addPeriodicTimeObserver(
+            forInterval: Self.playbackProgressObservationInterval,
+            queue: .main
+        ) { [weak self] time in
+            Task { @MainActor [weak self] in
+                self?.handlePeriodicPlaybackTime(time)
+            }
+        })
     }
 
     deinit {
         recoveryTask?.cancel()
+        let playbackTimeObserver = playbackTimeObserver
+        let player = player
+        Task { @MainActor in
+            playbackTimeObserver?.remove(from: player)
+        }
         player.pause()
         player.replaceCurrentItem(with: nil)
     }
@@ -65,6 +89,8 @@ final class StreamPlayerController {
             return
         }
         itemObservers = []
+        cancelCurrentItemLoading()
+        resetPlaybackProgress()
         let item = Self.playerItem(for: activeURL)
 
         item.publisher(for: \.status)
@@ -86,6 +112,14 @@ final class StreamPlayerController {
             .store(in: &itemObservers)
 
         NotificationCenter.default
+            .publisher(for: .AVPlayerItemNewErrorLogEntry, object: item)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak item] _ in
+                self?.handleNewErrorLogEntry(from: item)
+            }
+            .store(in: &itemObservers)
+
+        NotificationCenter.default
             .publisher(for: .AVPlayerItemPlaybackStalled, object: item)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -98,7 +132,9 @@ final class StreamPlayerController {
     }
 
     private func scheduleRecovery(after error: Error?) {
-        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
+        guard terminalPlaybackError == nil else { return }
+        recoveryTask?.cancel()
+        recoveryTask = nil
         if let error {
             logger.error(error, private: activeURL?.absoluteString ?? originalURL?.absoluteString ?? "")
             if Self.isForbiddenResourceError(error) {
@@ -121,27 +157,44 @@ final class StreamPlayerController {
     }
 
     private func recoverAfterStall() {
-        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
         logger.info("Stream stalled", private: activeURL?.absoluteString ?? "")
+        scheduleStallRecovery(trigger: "playback stalled notification", delay: Self.stallRecoveryDelay)
+    }
+
+    private func scheduleStallRecovery(trigger: String, delay: TimeInterval) {
+        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
         recoveryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled else { return }
             recoveryTask = nil
-            // Still stuck buffering after the grace period. A user initiated
-            // pause is .paused and is left alone.
-            if player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
-                logger.info("Stream did not recover from stall, reloading", private: activeURL?.absoluteString ?? "")
-                if let error = player.currentItem?.error {
-                    logger.error(error, private: activeURL?.absoluteString ?? originalURL?.absoluteString ?? "")
-                    if Self.isForbiddenResourceError(error) {
-                        presentTerminalPlaybackError(Self.forbiddenResourceMessage)
-                        return
-                    }
-                }
-                consecutiveFailures += 1
-                load()
+            recoverIfStillStuck(trigger: trigger)
+        }
+    }
+
+    private func recoverIfStillStuck(trigger: String) {
+        guard terminalPlaybackError == nil else { return }
+        guard let item = player.currentItem else { return }
+
+        if let error = item.error {
+            logger.error(error, private: activeURL?.absoluteString ?? originalURL?.absoluteString ?? "")
+            if Self.isForbiddenResourceError(error) {
+                presentTerminalPlaybackError(Self.forbiddenResourceMessage)
+                return
+            }
+            if Self.isRangeWithoutContentLengthError(error), switchToHLSFallback() {
+                return
             }
         }
+
+        guard item.status == .failed
+                || player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                || playbackHasStoppedProgressing() else {
+            return
+        }
+
+        consecutiveFailures += 1
+        logger.info("Stream did not recover from \(trigger), reloading attempt \(consecutiveFailures)", private: activeURL?.absoluteString ?? "")
+        load()
     }
 
     private func recoverIfFailed() {
@@ -198,6 +251,55 @@ final class StreamPlayerController {
         return item
     }
 
+    private func handleNewErrorLogEntry(from item: AVPlayerItem?) {
+        guard let event = item?.errorLog()?.events.last else { return }
+        let comment = event.errorComment ?? ""
+        let domain = event.errorDomain
+        let url = event.uri ?? activeURL?.absoluteString ?? originalURL?.absoluteString ?? ""
+        logger.error(
+            "Stream error log entry \(event.errorStatusCode) \(domain) \(comment)",
+            private: url
+        )
+
+        if Self.isForbiddenResourceLog(statusCode: event.errorStatusCode, comment: comment) {
+            presentTerminalPlaybackError(Self.forbiddenResourceMessage)
+            return
+        }
+
+        guard Self.shouldRecoverFromErrorLog(
+            statusCode: event.errorStatusCode,
+            domain: event.errorDomain,
+            comment: event.errorComment
+        ) else {
+            return
+        }
+
+        scheduleStallRecovery(
+            trigger: "player error log \(event.errorStatusCode)",
+            delay: Self.errorLogRecoveryDelay
+        )
+    }
+
+    private func handlePeriodicPlaybackTime(_ time: CMTime) {
+        guard terminalPlaybackError == nil else { return }
+        guard player.currentItem != nil else {
+            resetPlaybackProgress()
+            return
+        }
+        guard player.timeControlStatus != .paused else { return }
+
+        if markPlaybackProgressIfAdvanced(to: time) {
+            if player.timeControlStatus == .playing {
+                consecutiveFailures = 0
+                clearPlaybackError()
+            }
+            return
+        }
+
+        guard player.timeControlStatus == .playing, playbackHasStoppedProgressing() else { return }
+        scheduleStallRecovery(trigger: "playback progress watchdog", delay: 0)
+    }
+
     static func isRangeWithoutContentLengthError(_ error: Error) -> Bool {
         for current in errorChain(for: error) {
             if current.domain == "CoreMediaErrorDomain", current.code == -12939 {
@@ -215,11 +317,31 @@ final class StreamPlayerController {
             if current.domain == NSURLErrorDomain, current.code == -1102 {
                 return true
             }
+            if current.code == 403 {
+                return true
+            }
             let description = current.localizedDescription
             return description.localizedCaseInsensitiveContains("HTTP 403")
                 || description.localizedCaseInsensitiveContains("403: Forbidden")
                 || description.localizedCaseInsensitiveContains("Forbidden")
         }
+    }
+
+    static func isForbiddenResourceLog(statusCode: Int, comment: String?) -> Bool {
+        statusCode == 403
+            || comment?.localizedCaseInsensitiveContains("HTTP 403") == true
+            || comment?.localizedCaseInsensitiveContains("403: Forbidden") == true
+            || comment?.localizedCaseInsensitiveContains("Forbidden") == true
+    }
+
+    static func shouldRecoverFromErrorLog(statusCode: Int, domain: String?, comment: String?) -> Bool {
+        if isForbiddenResourceLog(statusCode: statusCode, comment: comment) {
+            return false
+        }
+        if statusCode != 0 {
+            return true
+        }
+        return domain?.isEmpty == false || comment?.isEmpty == false
     }
 
     static func hlsFallbackURL(for url: URL) -> URL? {
@@ -267,7 +389,26 @@ final class StreamPlayerController {
 #endif
 }
 
+private final class PlaybackTimeObserver: @unchecked Sendable {
+
+    private let token: Any
+
+    init(_ token: Any) {
+        self.token = token
+    }
+
+    func remove(from player: AVPlayer) {
+        player.removeTimeObserver(token)
+    }
+}
+
 private extension StreamPlayerController {
+
+    static let errorLogRecoveryDelay: TimeInterval = 3
+    static let stallRecoveryDelay: TimeInterval = 8
+    static let waitingRecoveryDelay: TimeInterval = 12
+    static let playbackProgressTimeout: TimeInterval = 20
+    static let playbackProgressObservationInterval = CMTime(seconds: 2, preferredTimescale: 1)
 
     static var forbiddenResourceMessage: String {
         String(localized: "You do not have permission to access this channel. Check your playlist, subscription, or server access.")
@@ -290,6 +431,40 @@ private extension StreamPlayerController {
         DispatchQueue.main.async { [onPlaybackError] in
             onPlaybackError(message)
         }
+    }
+
+    func cancelCurrentItemLoading() {
+        guard let item = player.currentItem else { return }
+        item.cancelPendingSeeks()
+        item.asset.cancelLoading()
+    }
+
+    func resetPlaybackProgress() {
+        lastObservedPlaybackTime = nil
+        lastPlaybackProgressDate = Date()
+    }
+
+    func markPlaybackProgress(at time: CMTime) {
+        guard time.isNumeric else { return }
+        lastObservedPlaybackTime = time
+        lastPlaybackProgressDate = Date()
+    }
+
+    func markPlaybackProgressIfAdvanced(to time: CMTime) -> Bool {
+        guard time.isNumeric else { return false }
+        guard let lastObservedPlaybackTime, lastObservedPlaybackTime.isNumeric else {
+            markPlaybackProgress(at: time)
+            return true
+        }
+
+        let delta = CMTimeGetSeconds(CMTimeSubtract(time, lastObservedPlaybackTime))
+        guard delta.isFinite, abs(delta) >= 0.5 else { return false }
+        markPlaybackProgress(at: time)
+        return true
+    }
+
+    func playbackHasStoppedProgressing() -> Bool {
+        Date().timeIntervalSince(lastPlaybackProgressDate) >= Self.playbackProgressTimeout
     }
 
     static func errorChain(for error: Error) -> [NSError] {
