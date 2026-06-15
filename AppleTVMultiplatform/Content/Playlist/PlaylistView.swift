@@ -9,6 +9,7 @@ struct PlaylistView: View {
     @Binding private var selectedStream: PlaylistParser.Stream?
     @State private var viewModel: PlaylistViewModel
     @Binding private var reloadCurrentProgram: UUID
+    @State private var showCategoryPicker = false
     private var restoreStreamHmac: () -> String? = { nil }
 #if os(tvOS)
     @Binding private var focusedStream: PlaylistParser.Stream?
@@ -57,6 +58,9 @@ struct PlaylistView: View {
             .overlay {
                 overlayView()
             }
+            .sheet(isPresented: $showCategoryPicker) {
+                categoryPickerView()
+            }
             .onChange(of: selectedStream) {
                 if let selectedStream {
                     viewModel.selectedStream(selectedStream)
@@ -75,6 +79,17 @@ struct PlaylistView: View {
     private func listView() -> some View {
 #if os(tvOS)
         List {
+            if viewModel.categories.count > 1 {
+                Section {
+                    Button {
+                        showCategoryPicker = true
+                    } label: {
+                        categoryFilterLabel()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 72)
+                    }
+                }
+            }
             let showHeader = viewModel.streams.count > 1
             ForEach(Array(viewModel.filteredStreams.enumerated()), id: \.offset) { index, streams in
                 Section {
@@ -180,6 +195,14 @@ struct PlaylistView: View {
     #endif
         .toolbar {
             if !viewModel.streams.isEmpty {
+                if viewModel.categories.count > 1 {
+                    ToolbarItem {
+                        Button("Categories", systemImage: "line.3.horizontal.decrease.circle") {
+                            showCategoryPicker = true
+                        }
+                        .accessibilityIdentifier("category-filter")
+                    }
+                }
                 ToolbarItem {
                     SettingsButtonView {
                         let _ = logger.info("Show Settings button event for", private: viewModel.content.id)
@@ -233,6 +256,41 @@ struct PlaylistView: View {
 #endif
     }
 
+    private func categoryPickerView() -> some View {
+        NavigationStack {
+            CategoryPickerView(
+                categories: viewModel.categories,
+                selectedCategoryID: viewModel.selectedCategoryID,
+                onSelect: { viewModel.selectCategory($0) }
+            )
+        }
+#if os(iOS)
+        .presentationDetents([.medium, .large])
+#endif
+    }
+
+    private func categoryFilterLabel() -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.selectedCategory.title)
+#if os(tvOS)
+                    .font(.system(size: 34, weight: .regular))
+#else
+                    .font(.headline)
+#endif
+                Text(channelCountText(viewModel.selectedCategory.count))
+                    .foregroundStyle(.secondary)
+#if os(tvOS)
+                    .font(.system(size: 22, weight: .regular))
+#else
+                    .font(.caption)
+#endif
+            }
+        }
+    }
+
     private func restoreLastWatchedIfNeeded() {
         guard selectedStream == nil,
               let hmac = restoreStreamHmac(),
@@ -245,6 +303,7 @@ struct PlaylistView: View {
 
     private func row(for stream: PlaylistParser.Stream) -> some View {
         StreamRowView(
+            streamURL: stream.url,
             logo: { await viewModel.iconURL(for: stream) },
             title: { viewModel.title(for: stream) },
             currentProgram: { await viewModel.currentProgram(for: stream) },
@@ -302,8 +361,59 @@ struct PlaylistView: View {
     }
 }
 
+private struct CategoryPickerView: View {
+
+    let categories: [PlaylistViewModel.StreamCategory]
+    let selectedCategoryID: PlaylistViewModel.StreamCategory.Identifier
+    let onSelect: (PlaylistViewModel.StreamCategory) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private var filteredCategories: [PlaylistViewModel.StreamCategory] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return categories }
+        return categories.filter { category in
+            category.title.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        List(filteredCategories) { category in
+            Button {
+                onSelect(category)
+                dismiss()
+            } label: {
+                HStack(spacing: 12) {
+                    Text(category.title)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text(channelCountText(category.count))
+                        .foregroundStyle(.secondary)
+                    if category.id == selectedCategoryID {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.tint)
+                    }
+                }
+            }
+        }
+        .searchable(text: $searchText, prompt: Text("Search categories"))
+        .navigationTitle("Channel Categories")
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+#endif
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") {
+                    dismiss()
+                }
+            }
+        }
+    }
+}
+
 private struct StreamRowView: View {
 
+    let streamURL: String
     let logo: @MainActor () async -> String?
     let title: @MainActor () -> String
     let currentProgram: @MainActor () async -> PlaylistViewModel.CurrentProgram?
@@ -311,6 +421,7 @@ private struct StreamRowView: View {
     @Binding var reloadCurrentProgram: UUID
     @State private var icon: String?
     @State private var program: PlaylistViewModel.CurrentProgram?
+    @State private var latency: StreamLatencyMeasurement?
     @InjectedObservable(\.logger) var logger
 
     var body: some View {
@@ -372,8 +483,31 @@ private struct StreamRowView: View {
             }
             .truncationMode(.tail)
             .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            if let latency {
+                Text(latency.displayText)
+                    .foregroundStyle(.green)
+                    .monospacedDigit()
+#if os(tvOS)
+                    .font(.system(size: 22, weight: .semibold))
+#else
+                    .font(.caption.weight(.semibold))
+#endif
+            }
+        }
+        .task(id: streamURL) {
+            latency = await StreamLatencyProbe.shared.measurement(for: streamURL)
         }
     }
+}
+
+private func channelCountText(_ count: Int) -> String {
+    if count == 1 {
+        return String(localized: "1 channel")
+    }
+    return String(format: String(localized: "%d channels"), count)
 }
 
 #if DEBUG

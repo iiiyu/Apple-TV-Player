@@ -47,4 +47,41 @@ struct StreamPlayerControllerTests {
 
         #expect(StreamPlayerController.isRangeWithoutContentLengthError(error))
     }
+
+    @MainActor
+    @Test func forbiddenResourceErrorMatchesHTTP403ErrorChain() {
+        let underlying = NSError(
+            domain: "CoreMediaErrorDomain",
+            code: -12660,
+            userInfo: [NSLocalizedDescriptionKey: "The operation could not be completed. HTTP 403: Forbidden"]
+        )
+        let error = NSError(
+            domain: NSURLErrorDomain,
+            code: -1102,
+            userInfo: [
+                NSLocalizedDescriptionKey: "You do not have permission to access the requested resource.",
+                NSUnderlyingErrorKey: underlying
+            ]
+        )
+
+        #expect(StreamPlayerController.isForbiddenResourceError(error))
+    }
+
+    @MainActor
+    @Test func forbiddenResourceErrorDoesNotMatchOtherNetworkFailures() {
+        let error = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorTimedOut,
+            userInfo: [NSLocalizedDescriptionKey: "The request timed out."]
+        )
+
+        #expect(!StreamPlayerController.isForbiddenResourceError(error))
+    }
+
+    @Test func streamLatencyProbeOnlyAcceptsHTTPURLs() throws {
+        #expect(StreamLatencyProbe.isProbeable(try #require(URL(string: "https://example.com/live.m3u8"))))
+        #expect(StreamLatencyProbe.isProbeable(try #require(URL(string: "http://example.com/live.m3u8"))))
+        #expect(!StreamLatencyProbe.isProbeable(try #require(URL(string: "file:///tmp/live.m3u8"))))
+        #expect(!StreamLatencyProbe.isProbeable(try #require(URL(string: "rtmp://example.com/live"))))
+    }
 }

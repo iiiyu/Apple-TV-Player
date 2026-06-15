@@ -13,6 +13,7 @@ import UIKit
 final class StreamPlayerController {
 
     let player = AVPlayer()
+    var onPlaybackError: (String?) -> Void
 
     private let originalURL: URL?
     private var activeURL: URL?
@@ -22,8 +23,10 @@ final class StreamPlayerController {
     private var recoveryTask: Task<Void, Never>?
     private var consecutiveFailures = 0
     private var didAttemptHLSFallback = false
+    private var terminalPlaybackError: String?
 
-    init(urlString: String) {
+    init(urlString: String, onPlaybackError: @escaping (String?) -> Void = { _ in }) {
+        self.onPlaybackError = onPlaybackError
         originalURL = URL(string: urlString)
         activeURL = originalURL
         load()
@@ -33,6 +36,7 @@ final class StreamPlayerController {
             .sink { [weak self] status in
                 if status == .playing {
                     self?.consecutiveFailures = 0
+                    self?.clearPlaybackError()
                 }
             }
             .store(in: &playerObservers)
@@ -54,8 +58,10 @@ final class StreamPlayerController {
     // MARK: - Private
 
     private func load() {
+        guard terminalPlaybackError == nil else { return }
         guard let activeURL else {
             logger.error("Cannot play stream, invalid URL")
+            presentTerminalPlaybackError(String(localized: "This stream URL is not valid."))
             return
         }
         itemObservers = []
@@ -92,9 +98,13 @@ final class StreamPlayerController {
     }
 
     private func scheduleRecovery(after error: Error?) {
-        guard recoveryTask == nil else { return }
+        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
         if let error {
             logger.error(error, private: activeURL?.absoluteString ?? originalURL?.absoluteString ?? "")
+            if Self.isForbiddenResourceError(error) {
+                presentTerminalPlaybackError(Self.forbiddenResourceMessage)
+                return
+            }
             if Self.isRangeWithoutContentLengthError(error), switchToHLSFallback() {
                 return
             }
@@ -111,7 +121,7 @@ final class StreamPlayerController {
     }
 
     private func recoverAfterStall() {
-        guard recoveryTask == nil else { return }
+        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
         logger.info("Stream stalled", private: activeURL?.absoluteString ?? "")
         recoveryTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(10))
@@ -128,12 +138,30 @@ final class StreamPlayerController {
     }
 
     private func recoverIfFailed() {
-        guard recoveryTask == nil else { return }
+        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
         guard let item = player.currentItem, item.status != .failed else {
             logger.info("Reloading failed stream on activation", private: activeURL?.absoluteString ?? "")
             consecutiveFailures = 0
             load()
             return
+        }
+    }
+
+    func retry() {
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        consecutiveFailures = 0
+        didAttemptHLSFallback = false
+        activeURL = originalURL
+        terminalPlaybackError = nil
+        updatePlaybackError(nil)
+        load()
+    }
+
+    func setPlaybackErrorHandler(_ handler: @escaping (String?) -> Void) {
+        onPlaybackError = handler
+        if let terminalPlaybackError {
+            updatePlaybackError(terminalPlaybackError)
         }
     }
 
@@ -164,22 +192,30 @@ final class StreamPlayerController {
     }
 
     static func isRangeWithoutContentLengthError(_ error: Error) -> Bool {
-        var pending = [error as NSError]
-        var seen = Set<String>()
-        while let current = pending.popLast() {
-            let key = "\(current.domain):\(current.code)"
-            guard seen.insert(key).inserted else { continue }
+        for current in errorChain(for: error) {
             if current.domain == "CoreMediaErrorDomain", current.code == -12939 {
                 return true
             }
             if current.localizedDescription.localizedCaseInsensitiveContains("byte range and no content length") {
                 return true
             }
-            if let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError {
-                pending.append(underlying)
-            }
         }
         return false
+    }
+
+    static func isForbiddenResourceError(_ error: Error) -> Bool {
+        errorChain(for: error).contains { current in
+            if current.domain == NSURLErrorDomain, current.code == -1102 {
+                return true
+            }
+            if current.domain == "CoreMediaErrorDomain", current.code == -12660 {
+                return true
+            }
+            let description = current.localizedDescription
+            return description.localizedCaseInsensitiveContains("HTTP 403")
+                || description.localizedCaseInsensitiveContains("403: Forbidden")
+                || description.localizedCaseInsensitiveContains("Forbidden")
+        }
     }
 
     static func hlsFallbackURL(for url: URL) -> URL? {
@@ -225,4 +261,51 @@ final class StreamPlayerController {
 #else
     private static let didBecomeActiveNotification = UIApplication.didBecomeActiveNotification
 #endif
+}
+
+private extension StreamPlayerController {
+
+    static var forbiddenResourceMessage: String {
+        String(localized: "You do not have permission to access this channel. Check your playlist, subscription, or server access.")
+    }
+
+    func presentTerminalPlaybackError(_ message: String) {
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        terminalPlaybackError = message
+        player.pause()
+        updatePlaybackError(message)
+    }
+
+    func clearPlaybackError() {
+        guard terminalPlaybackError == nil else { return }
+        updatePlaybackError(nil)
+    }
+
+    func updatePlaybackError(_ message: String?) {
+        DispatchQueue.main.async { [onPlaybackError] in
+            onPlaybackError(message)
+        }
+    }
+
+    static func errorChain(for error: Error) -> [NSError] {
+        var pending = [error as NSError]
+        var seen = Set<String>()
+        var chain: [NSError] = []
+
+        while let current = pending.popLast() {
+            let key = "\(current.domain):\(current.code):\(current.localizedDescription)"
+            guard seen.insert(key).inserted else { continue }
+            chain.append(current)
+
+            if let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError {
+                pending.append(underlying)
+            }
+            if let underlyingErrors = current.userInfo["NSDetailedErrors"] as? [NSError] {
+                pending.append(contentsOf: underlyingErrors)
+            }
+        }
+
+        return chain
+    }
 }

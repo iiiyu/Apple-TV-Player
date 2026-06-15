@@ -35,6 +35,9 @@ final class StreamViewModel {
     private(set) var displayProgram: [DisplayProgram] = []
     private(set) var originStreamCurrentProgram: DisplayProgram?
     private(set) var didLoadPrograms = false
+    private(set) var mediaInfo: StreamMediaInfo?
+    private(set) var isLoadingMediaInfo = false
+    private(set) var mediaInfoErrorMessage: String?
 
     init(
         content: PlaylistItem.Content,
@@ -55,6 +58,20 @@ final class StreamViewModel {
 
     func loadPrograms() async {
         _ = await loadPrograms(stream)
+    }
+
+    func loadMediaInfo() async {
+        guard !isLoadingMediaInfo, mediaInfo == nil else { return }
+        isLoadingMediaInfo = true
+        mediaInfoErrorMessage = nil
+        defer { isLoadingMediaInfo = false }
+
+        do {
+            mediaInfo = try await StreamMediaInfoLoader.load(urlString: stream.url)
+        } catch {
+            logger.error(error, private: stream.url)
+            mediaInfoErrorMessage = errorMessage(for: error)
+        }
     }
 
     func loadPrograms(_ stream: PlaylistParser.Stream) async -> Bool {
@@ -142,6 +159,15 @@ private extension StreamViewModel {
 
     func isCurrent(_ program: ProgramGuide.Program, at now: Date) -> Bool {
         program.start <= now && now < program.stop
+    }
+
+    func errorMessage(for error: Swift.Error) -> String {
+        if let localizedError = error as? LocalizedError,
+           let description = localizedError.errorDescription,
+           !description.isEmpty {
+            return description
+        }
+        return "\(error)"
     }
 
     static func title(for stream: PlaylistParser.Stream) -> String {

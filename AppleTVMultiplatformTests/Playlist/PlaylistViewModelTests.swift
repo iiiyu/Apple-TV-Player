@@ -236,6 +236,67 @@ struct PlaylistViewModelTests {
         #expect(viewModel.filteredStreams == viewModel.streams)
     }
 
+    @Test func categoriesAreCountedAndFilterStreams() async throws {
+        let playlist = makePlaylist(
+            streams: [
+                .init(
+                    title: "Football",
+                    url: "https://example.com/football.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "1",
+                    tvgName: nil,
+                    groupTitle: "Sports"
+                ),
+                .init(
+                    title: "Headline",
+                    url: "https://example.com/headline.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "2",
+                    tvgName: nil,
+                    groupTitle: "News"
+                ),
+                .init(
+                    title: "Basketball",
+                    url: "https://example.com/basketball.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "3",
+                    tvgName: nil,
+                    groupTitle: "Sports"
+                ),
+                .init(
+                    title: "Local",
+                    url: "https://example.com/local.m3u8",
+                    tvgLogo: nil,
+                    tvgID: "4",
+                    tvgName: nil,
+                    groupTitle: nil
+                )
+            ]
+        )
+        let service = MockPlaylistService(result: .success([playlist]))
+        Container.shared.playlistService.register { service }
+        let viewModel = PlaylistViewModel(content: makeContent())
+
+        await viewModel.loadStreams()
+
+        #expect(viewModel.categories == [
+            .init(id: .all, title: "All", count: 4),
+            .init(id: .group("Sports"), title: "Sports", count: 2),
+            .init(id: .group("News"), title: "News", count: 1),
+            .init(id: .uncategorized, title: "Uncategorized", count: 1)
+        ])
+
+        viewModel.selectCategory(viewModel.categories[1])
+        #expect(viewModel.filteredStreams == [[playlist.streams[0], playlist.streams[2]]])
+
+        viewModel.searchText = "basket"
+        #expect(viewModel.filteredStreams == [[playlist.streams[2]]])
+
+        viewModel.searchText = ""
+        viewModel.selectCategory(viewModel.categories[3])
+        #expect(viewModel.filteredStreams == [[playlist.streams[3]]])
+    }
+
     @Test func refreshForcesPlaylistReloadAndReloadsStreams() async throws {
         let playlist = makePlaylist(
             streams: [

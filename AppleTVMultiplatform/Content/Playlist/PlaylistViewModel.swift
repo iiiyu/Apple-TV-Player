@@ -7,6 +7,18 @@ import SwiftData
 @Observable
 final class PlaylistViewModel {
 
+    struct StreamCategory: Identifiable, Equatable, Hashable, Sendable {
+        enum Identifier: Equatable, Hashable, Sendable {
+            case all
+            case group(String)
+            case uncategorized
+        }
+
+        let id: Identifier
+        let title: String
+        let count: Int
+    }
+
     @ObservationIgnored @Injected(\.playlistService) private var playlistService
     @ObservationIgnored @Injected(\.databaseService) private var databaseService
     @ObservationIgnored @Injected(\.logger) private var logger
@@ -18,14 +30,24 @@ final class PlaylistViewModel {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
     private(set) var progress: String?
+    private(set) var categories: [StreamCategory] = [
+        .init(id: .all, title: String(localized: "All"), count: 0)
+    ]
+    var selectedCategoryID: StreamCategory.Identifier = .all
     var searchText = ""
 
     // A projection over the sorted/grouped `streams`, so search keeps
     // the group order and the per-settings sort order intact.
     var filteredStreams: [[PlaylistParser.Stream]] {
+        let categoryStreams = streams.compactMap { group in
+            let matches = group.filter { stream in
+                matchesCategory(stream, selectedCategoryID)
+            }
+            return matches.isEmpty ? nil : matches
+        }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return streams }
-        return streams.compactMap { group in
+        guard !query.isEmpty else { return categoryStreams }
+        return categoryStreams.compactMap { group in
             let matches = group.filter { stream in
                 title(for: stream).localizedCaseInsensitiveContains(query)
                     || stream.title.localizedCaseInsensitiveContains(query)
@@ -104,6 +126,7 @@ final class PlaylistViewModel {
             let playlistItem = playlist
             guard let settings = playlistItem?.settings else {
                 self.streams = [streams]
+                updateCategories(from: streams)
                 return
             }
             let order = playlistItem?.settings?.orderType ?? .none
@@ -180,12 +203,23 @@ final class PlaylistViewModel {
                     self.streams = [actualOrder]
                 }
             }
+            updateCategories(from: streams)
             logger.info("Streams sorting completed in \(measure.milliseconds) milliseconds")
         } catch {
             logger.error(error, private: content.id)
             streams = []
+            updateCategories(from: [])
             errorMessage = errorMessage(for: error)
         }
+    }
+
+    func selectCategory(_ category: StreamCategory) {
+        selectedCategoryID = category.id
+    }
+
+    var selectedCategory: StreamCategory {
+        categories.first(where: { $0.id == selectedCategoryID })
+            ?? .init(id: .all, title: String(localized: "All"), count: streams.flatMap(\.self).count)
     }
 
     nonisolated func title(for stream: PlaylistParser.Stream) -> String {
@@ -317,6 +351,65 @@ final class PlaylistViewModel {
         let fetch = FetchDescriptor<PlaylistItem>()
         return try? databaseService.mainContext.fetch(fetch)
             .first(where: { $0.identity == content.identity })
+    }
+
+    private func updateCategories(from streams: [PlaylistParser.Stream]) {
+        var orderedGroups: [String] = []
+        var countsByGroup: [String: Int] = [:]
+        var uncategorizedCount = 0
+
+        for stream in streams {
+            guard let group = normalizedGroupTitle(for: stream) else {
+                uncategorizedCount += 1
+                continue
+            }
+            if countsByGroup[group] == nil {
+                orderedGroups.append(group)
+            }
+            countsByGroup[group, default: 0] += 1
+        }
+
+        var nextCategories: [StreamCategory] = [
+            .init(id: .all, title: String(localized: "All"), count: streams.count)
+        ]
+        nextCategories.append(
+            contentsOf: orderedGroups.map { group in
+                .init(id: .group(group), title: group, count: countsByGroup[group, default: 0])
+            }
+        )
+        if uncategorizedCount > 0 {
+            nextCategories.append(
+                .init(
+                    id: .uncategorized,
+                    title: String(localized: "Uncategorized"),
+                    count: uncategorizedCount
+                )
+            )
+        }
+
+        categories = nextCategories
+        if !categories.contains(where: { $0.id == selectedCategoryID }) {
+            selectedCategoryID = .all
+        }
+    }
+
+    private func matchesCategory(
+        _ stream: PlaylistParser.Stream,
+        _ categoryID: StreamCategory.Identifier
+    ) -> Bool {
+        switch categoryID {
+        case .all:
+            return true
+        case .group(let group):
+            return normalizedGroupTitle(for: stream) == group
+        case .uncategorized:
+            return normalizedGroupTitle(for: stream) == nil
+        }
+    }
+
+    private func normalizedGroupTitle(for stream: PlaylistParser.Stream) -> String? {
+        let title = stream.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title?.isEmpty == false ? title : nil
     }
 
     isolated deinit {

@@ -11,6 +11,9 @@ struct StreamView: View {
     @InjectedObservable(\.logger) var logger
     @State private var viewModel: StreamViewModel
     @Binding private var reloadCurrentProgram: UUID
+    @State private var showMediaInfo = false
+    @State private var playbackErrorMessage: String?
+    @State private var playbackReloadID = UUID()
 #if os(tvOS)
     @State private var showFullScreen = false
     @State private var tvOSPlayer: TvOSPlayer
@@ -89,6 +92,19 @@ struct StreamView: View {
         .navigationTitle(viewModel.title)
         .navigationBarTitleDisplayMode(.inline)
 #endif
+        .toolbar {
+#if !os(tvOS)
+            ToolbarItem {
+                Button("Stream Info", systemImage: "info.circle") {
+                    presentMediaInfo()
+                }
+                .accessibilityIdentifier("stream-info")
+            }
+#endif
+        }
+        .sheet(isPresented: $showMediaInfo) {
+            mediaInfoView()
+        }
         .task(id: reloadCurrentProgram) {
             await viewModel.loadPrograms()
         }
@@ -97,13 +113,23 @@ struct StreamView: View {
             reloadCurrentProgram = .init()
         }) {
             let _ = logger.info("Presenting full screen from floating player", private: viewModel.stream.title)
-            tvOSPlayer.fullScreenView()
+            ZStack {
+                tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+                if let playbackErrorMessage {
+                    playbackErrorView(playbackErrorMessage)
+                }
+            }
         }
         .fullScreenCover(isPresented: $reselectStream, onDismiss: {
             reloadCurrentProgram = .init()
         }) {
             let _ = logger.info("Presenting full screen from double select", private: viewModel.stream.title)
-            tvOSPlayer.fullScreenView()
+            ZStack {
+                tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+                if let playbackErrorMessage {
+                    playbackErrorView(playbackErrorMessage)
+                }
+            }
         }
         .onChange(of: focusedStream) {
             if let focusedStream {
@@ -133,6 +159,10 @@ struct StreamView: View {
             HStack(spacing: 10) {
                 Text(viewModel.title)
                 Text(viewModel.currentTimeText(at: now))
+                Button("", systemImage: "info.circle") {
+                    presentMediaInfo()
+                }
+                .accessibilityIdentifier("stream-info")
             }
             .font(.headline)
             .foregroundStyle(.secondary)
@@ -140,23 +170,86 @@ struct StreamView: View {
         }
     }
 #endif
+    private func presentMediaInfo() {
+        showMediaInfo = true
+        Task {
+            await viewModel.loadMediaInfo()
+        }
+    }
+
+    private func mediaInfoView() -> some View {
+        NavigationStack {
+            StreamMediaInfoView(viewModel: viewModel)
+        }
+#if os(iOS)
+        .presentationDetents([.medium, .large])
+#endif
+    }
+
     private func videoPlayer() -> some View {
+        ZStack {
+            platformVideoPlayer()
+            if let playbackErrorMessage {
+                playbackErrorView(playbackErrorMessage)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func platformVideoPlayer() -> some View {
 #if os(macOS)
-        MacOsPlayerView(urlString: viewModel.stream.url) {
+        MacOsPlayerView(
+            urlString: viewModel.stream.url,
+            onPlaybackError: handlePlaybackError
+        ) {
             reloadCurrentProgram = .init()
         }
+        .id(playbackReloadID)
 #elseif os(tvOS)
         HStack(spacing: 0) {
             Button {
                 showFullScreen = true
             } label: {
-                tvOSPlayer.compactView()
+                tvOSPlayer.compactView(onPlaybackError: handlePlaybackError)
             }
             .buttonStyle(.card)
         }
         .ignoresSafeArea()
 #else
-        iOSPlayerView(urlString: viewModel.stream.url)
+        iOSPlayerView(
+            urlString: viewModel.stream.url,
+            onPlaybackError: handlePlaybackError
+        )
+        .id(playbackReloadID)
+#endif
+    }
+
+    private func playbackErrorView(_ message: String) -> some View {
+        ContentUnavailableView {
+            Label("Unable to Play Channel", systemImage: "lock.slash")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Retry") {
+                retryPlayback()
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func handlePlaybackError(_ message: String?) {
+        playbackErrorMessage = message
+    }
+
+    private func retryPlayback() {
+        playbackErrorMessage = nil
+#if os(tvOS)
+        tvOSPlayer.retry()
+#else
+        playbackReloadID = UUID()
 #endif
     }
 
@@ -214,10 +307,108 @@ struct StreamView: View {
     }
 }
 
+private struct StreamMediaInfoView: View {
+
+    @Bindable var viewModel: StreamViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if viewModel.isLoadingMediaInfo {
+                    ProgressView("Reading Stream Info")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else if let mediaInfo = viewModel.mediaInfo {
+                    badgeList(mediaInfo.badges)
+                    MediaInfoSectionView(title: "Video Info 1", items: mediaInfo.videoItems)
+                    MediaInfoSectionView(title: "Audio Info 1", items: mediaInfo.audioItems)
+                } else if let errorMessage = viewModel.mediaInfoErrorMessage {
+                    ContentUnavailableView {
+                        Label("Stream Info Unavailable", systemImage: "info.circle")
+                    } description: {
+                        Text(errorMessage)
+                    } actions: {
+                        Button("Retry") {
+                            Task {
+                                await viewModel.loadMediaInfo()
+                            }
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Stream Info")
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+#endif
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") {
+                    dismiss()
+                }
+            }
+        }
+        .task {
+            await viewModel.loadMediaInfo()
+        }
+    }
+
+    private func badgeList(_ badges: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                    Text(badge)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.thinMaterial, in: Capsule())
+                }
+            }
+        }
+    }
+}
+
+private struct MediaInfoSectionView: View {
+
+    let title: LocalizedStringKey
+    let items: [StreamMediaInfo.Item]
+
+    var body: some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    ForEach(items) { item in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(LocalizedStringKey(item.name))
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 16)
+                            Text(item.value)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        .padding(.vertical, 10)
+                        if item.id != items.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 4)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+}
+
 #if os(macOS)
 private struct MacOsPlayerView: NSViewRepresentable {
 
     let urlString: String
+    let onPlaybackError: (String?) -> Void
     let onExitFullScreen: () -> Void
 
     func makeNSView(context: Context) -> AVPlayerView {
@@ -236,7 +427,10 @@ private struct MacOsPlayerView: NSViewRepresentable {
 
     func makeCoordinator() -> PlayerDelegate {
         return PlayerDelegate(
-            controller: StreamPlayerController(urlString: urlString),
+            controller: StreamPlayerController(
+                urlString: urlString,
+                onPlaybackError: onPlaybackError
+            ),
             onExitFullScreen: onExitFullScreen
         )
     }
@@ -298,19 +492,26 @@ private final class TvOSPlayer {
         controller = StreamPlayerController(urlString: urlString)
     }
 
-    func compactView() -> some View {
-        TvOSPlayerView(player: controller.player, compact: true)
+    func compactView(onPlaybackError: @escaping (String?) -> Void) -> some View {
+        controller.setPlaybackErrorHandler(onPlaybackError)
+        return TvOSPlayerView(player: controller.player, compact: true)
     }
 
-    func fullScreenView() -> some View {
-        TvOSPlayerView(player: controller.player, compact: false)
+    func fullScreenView(onPlaybackError: @escaping (String?) -> Void) -> some View {
+        controller.setPlaybackErrorHandler(onPlaybackError)
+        return TvOSPlayerView(player: controller.player, compact: false)
             .ignoresSafeArea()
+    }
+
+    func retry() {
+        controller.retry()
     }
 }
 #else
 private struct iOSPlayerView: UIViewControllerRepresentable {
 
     let urlString: String
+    let onPlaybackError: (String?) -> Void
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         do {
@@ -328,7 +529,12 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: StreamPlayerController(urlString: urlString))
+        Coordinator(
+            controller: StreamPlayerController(
+                urlString: urlString,
+                onPlaybackError: onPlaybackError
+            )
+        )
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
