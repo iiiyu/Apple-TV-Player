@@ -20,12 +20,20 @@ struct ContentView: View {
             .task {
                 viewModel.restoreLastWatched()
             }
+#if os(tvOS)
+            .fullScreenCover(isPresented: $viewModel.isShowingPlaylistAdd, onDismiss: {
+                viewModel.updatePlaylists()
+            }) {
+                addPlaylistView()
+            }
+#else
             .sheet(isPresented: $viewModel.isShowingPlaylistAdd) {
                 addPlaylistView()
                     .onDisappear {
                         viewModel.updatePlaylists()
                     }
             }
+#endif
             .onChange(of: viewModel.selectedPlaylist) {
                 Task {
                     await viewModel.onPlaylistSelected()
@@ -73,7 +81,12 @@ struct ContentView: View {
                 .ignoresSafeArea(.container, edges: .bottom)
         }
         .presentationDetents([.large])
-
+#elseif os(tvOS)
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+            PlaylistAddView()
+        }
 #else
         PlaylistAddView()
 #endif
