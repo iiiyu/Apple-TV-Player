@@ -37,10 +37,6 @@ final class ContentViewModel {
                 return
             }
 
-            guard let preparedPlaylist = PreparedPlaylist(playlist) else {
-                return
-            }
-
             if playlist.encrypted {
                 selectedPlaylistContent = nil
 #if os(tvOS)
@@ -49,6 +45,9 @@ final class ContentViewModel {
                 logger.info("Show enter pin to decrypt", private: identity)
                 isShowingPlaylistDecryptPin = identity
             } else {
+                guard let preparedPlaylist = try await preparedPlaylist(for: playlist, pin: nil) else {
+                    return
+                }
                 let restoredPlaylist = try await playlistAddService.restorePlaylist(preparedPlaylist, pin: nil)
                 logger.info("Show Playlist", private: identity)
                 selectedPlaylistContent = restoredPlaylist.content
@@ -126,5 +125,27 @@ final class ContentViewModel {
 
     isolated deinit {
         logger.info("deinit of \(self)")
+    }
+}
+
+private extension ContentViewModel {
+
+    func preparedPlaylist(for playlist: PlaylistItem, pin: String?) async throws -> PreparedPlaylist? {
+        guard let source = PlaylistSourceSnapshot(playlist),
+              let state = try PlaylistSettingsItem.state(for: playlist, in: databaseService.mainContext) else {
+            return nil
+        }
+
+        let prepared = try await playlistAddService.preparePlaylist(
+            from: source,
+            cachedData: state.data,
+            pin: pin,
+            progress: { _, _ in }
+        )
+        if state.data != prepared.data {
+            state.data = prepared.data
+            try databaseService.mainContext.save()
+        }
+        return prepared
     }
 }

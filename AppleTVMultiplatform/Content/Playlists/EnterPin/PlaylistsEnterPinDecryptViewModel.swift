@@ -27,10 +27,21 @@ final class PlaylistsEnterPinDecryptViewModel {
                 .first(where: { $0.identity == identity }), playlist.encrypted else {
                 return nil
             }
-            guard let preparedPlaylist = PreparedPlaylist(playlist) else {
+            guard let source = PlaylistSourceSnapshot(playlist),
+                  let state = try PlaylistSettingsItem.state(for: playlist, in: databaseService.mainContext) else {
                 return nil
             }
             logger.info("Start decrypting", private: identity)
+            let preparedPlaylist = try await playlistAddService.preparePlaylist(
+                from: source,
+                cachedData: state.data,
+                pin: pin,
+                progress: { _, _ in }
+            )
+            if state.data != preparedPlaylist.data {
+                state.data = preparedPlaylist.data
+                try databaseService.mainContext.save()
+            }
             return try await playlistAddService.restorePlaylist(preparedPlaylist, pin: pin).content
         } catch {
             message = error.localizedDescription

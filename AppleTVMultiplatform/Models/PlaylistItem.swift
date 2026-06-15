@@ -13,21 +13,26 @@ final class PlaylistItem {
     private(set) var date: Date? // Not encrypted
     var icon: String? // Not encrypted
     var url: Data? // date url plain or encrypted
-    var data: Data? // data from url compressed and may be encrypted
     var salt: Data? // Not encrypted
     var encrypted: Bool = false
-
-    var settings: PlaylistSettingsItem?
+    var urlTvg: String?
+    var urlImg: String?
+    var tvgLogo: String?
+    @Transient var data: Data?
+    @Transient var settings: PlaylistSettingsItem?
 
     init(
         name: String?,
         date: Date?,
         icon: String?,
         url: Data?,
-        data: Data?,
+        data: Data? = nil,
         salt: Data?,
         encrypted: Bool,
-        settings: PlaylistSettingsItem? = nil
+        settings: PlaylistSettingsItem? = nil,
+        urlTvg: String? = nil,
+        urlImg: String? = nil,
+        tvgLogo: String? = nil
     ) {
         self.name = name
         self.date = date
@@ -37,6 +42,9 @@ final class PlaylistItem {
         self.salt = salt
         self.encrypted = encrypted
         self.settings = settings
+        self.urlTvg = urlTvg
+        self.urlImg = urlImg
+        self.tvgLogo = tvgLogo
     }
 }
 
@@ -51,6 +59,9 @@ nonisolated extension PlaylistItem: Codable {
         case salt
         case encrypted
         case settings
+        case urlTvg
+        case urlImg
+        case tvgLogo
     }
 
     convenience init(from decoder: any Decoder) throws {
@@ -63,7 +74,10 @@ nonisolated extension PlaylistItem: Codable {
             data: try container.decodeIfPresent(Data.self, forKey: .data),
             salt: try container.decodeIfPresent(Data.self, forKey: .salt),
             encrypted: try container.decodeIfPresent(Bool.self, forKey: .encrypted) ?? false,
-            settings: try container.decodeIfPresent(PlaylistSettingsItem.self, forKey: .settings)
+            settings: try container.decodeIfPresent(PlaylistSettingsItem.self, forKey: .settings),
+            urlTvg: try container.decodeIfPresent(String.self, forKey: .urlTvg),
+            urlImg: try container.decodeIfPresent(String.self, forKey: .urlImg),
+            tvgLogo: try container.decodeIfPresent(String.self, forKey: .tvgLogo)
         )
     }
 
@@ -77,6 +91,9 @@ nonisolated extension PlaylistItem: Codable {
         try container.encodeIfPresent(salt, forKey: .salt)
         try container.encode(encrypted, forKey: .encrypted)
         try container.encodeIfPresent(settings, forKey: .settings)
+        try container.encodeIfPresent(urlTvg, forKey: .urlTvg)
+        try container.encodeIfPresent(urlImg, forKey: .urlImg)
+        try container.encodeIfPresent(tvgLogo, forKey: .tvgLogo)
     }
 }
 

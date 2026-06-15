@@ -76,6 +76,8 @@ struct AppleTVMultiplatformAppViewModelTests {
         let didHandle = viewModel.handleIncomingFile(url: url)
         let storedPlaylists = try database.mainContext.fetch(FetchDescriptor<PlaylistItem>())
         let storedPlaylist = try #require(storedPlaylists.first)
+        let identity = try #require(storedPlaylist.identity)
+        let storedState = try fetchState(from: database, identity: identity)
 
         #expect(didHandle == true)
         #expect(viewModel.error == nil)
@@ -85,7 +87,7 @@ struct AppleTVMultiplatformAppViewModelTests {
         #expect(storedPlaylist.date == importedPlaylist.date)
         #expect(storedPlaylist.icon == importedPlaylist.icon)
         #expect(storedPlaylist.url == importedPlaylist.url)
-        #expect(storedPlaylist.data == importedPlaylist.data)
+        #expect(storedState.data == importedPlaylist.data)
         #expect(storedPlaylist.salt == importedPlaylist.salt)
         #expect(storedPlaylist.encrypted == importedPlaylist.encrypted)
     }
@@ -140,6 +142,18 @@ private extension AppleTVMultiplatformAppViewModelTests {
             salt: salt,
             encrypted: encrypted
         )
+    }
+
+    func fetchState(
+        from database: DatabaseService,
+        identity: PlaylistItem.Identity
+    ) throws -> PlaylistSettingsItem {
+        let state = try PlaylistSettingsItem.state(
+            for: identity,
+            in: database.mainContext,
+            create: false
+        )
+        return try #require(state)
     }
 
     func writePlaylistFile(playlist: PlaylistItem) throws -> URL {

@@ -261,28 +261,34 @@ struct ContentViewPreviews: PreviewProvider {
                 let database = DatabaseService(isStoredInMemoryOnly: true)
                 let now = Date()
                 let mainContext = database.mainContext
-                mainContext.insert(
+                let items = [
                     PlaylistItem(
                         name: "Netflix", date: now.addingTimeInterval(100),
-                        icon: nil, url: Data(),
-                        data: Data(), salt: nil, encrypted: false
-                    )
-                )
-                mainContext.insert(
+                        icon: nil, url: Data(), salt: nil, encrypted: false
+                    ),
                     PlaylistItem(
                         name: "Amazon TV", date: now.addingTimeInterval(103),
-                        icon: nil, url: Data(),
-                        data: Data(), salt: nil, encrypted: false
-                    )
-                )
-                mainContext.insert(
+                        icon: nil, url: Data(), salt: nil, encrypted: false
+                    ),
                     PlaylistItem(
                         name: "America TV", date: now.addingTimeInterval(200),
                         icon: "https://raw.githubusercontent.com/mikehouse/Apple-TV-Player/refs/heads/master/logo.png",
-                        url: Data(),
-                        data: Data(), salt: nil, encrypted: false
+                        url: Data(), salt: nil, encrypted: false
                     )
-                )
+                ]
+                for item in items {
+                    mainContext.insert(item)
+                    if let identity = item.identity {
+                        mainContext.insert(
+                            PlaylistSettingsItem(
+                                playlistName: identity.name,
+                                playlistDate: identity.date,
+                                data: Data(),
+                                order: nil
+                            )
+                        )
+                    }
+                }
                 return database
             }
         }

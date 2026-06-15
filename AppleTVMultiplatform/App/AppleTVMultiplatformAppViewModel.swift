@@ -38,6 +38,16 @@ final class AppleTVMultiplatformAppViewModel {
                 return false
             }
             databaseService.mainContext.insert(decoded)
+            if let identity = decoded.identity {
+                databaseService.mainContext.insert(
+                    PlaylistSettingsItem(
+                        playlistName: identity.name,
+                        playlistDate: identity.date,
+                        data: decoded.data,
+                        order: decoded.settings?.order
+                    )
+                )
+            }
             try databaseService.mainContext.save()
             logger.info("Playlist added", private: decoded.name!)
             return true

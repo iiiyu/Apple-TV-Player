@@ -140,6 +140,16 @@ private extension ContentViewModelTests {
 
         for item in items {
             database.mainContext.insert(item)
+            if let identity = item.identity {
+                database.mainContext.insert(
+                    PlaylistSettingsItem(
+                        playlistName: identity.name,
+                        playlistDate: identity.date,
+                        data: item.data,
+                        order: nil
+                    )
+                )
+            }
         }
 
         try database.mainContext.save()

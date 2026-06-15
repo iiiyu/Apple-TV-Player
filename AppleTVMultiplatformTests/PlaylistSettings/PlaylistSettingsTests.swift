@@ -8,6 +8,39 @@ import FactoryTesting
 @Suite(.container)
 struct PlaylistSettingsTests {
 
+    @Test func settingsPersistCloudKitSafePayloadsAndInverseRelationship() throws {
+        let identity = makeIdentity()
+        let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.none.rawValue)
+        let viewedAt = Date(timeIntervalSince1970: 1_234)
+        settings.views = ["stream-hmac": 3]
+        settings.recent = ["stream-hmac": viewedAt]
+        settings.encrypted = ["stream-hmac": "encrypted-title"]
+        settings.favorites = ["stream-hmac"]
+        let playlist = makePlaylistItem(identity: identity, encrypted: true, settings: settings)
+        let database = try makeDatabaseService(items: [playlist])
+
+        let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+        let storedSettings = try #require(storedPlaylist.settings)
+
+        #expect(storedSettings.identity == storedPlaylist.identity)
+        #expect(storedSettings.viewsData != nil)
+        #expect(storedSettings.recentData != nil)
+        #expect(storedSettings.encryptedData != nil)
+        #expect(storedSettings.favoritesData != nil)
+        #expect(storedSettings.views == ["stream-hmac": 3])
+        #expect(storedSettings.recent == ["stream-hmac": viewedAt])
+        #expect(storedSettings.encrypted == ["stream-hmac": "encrypted-title"])
+        #expect(storedSettings.favorites == ["stream-hmac"])
+
+        let exported = try JSONEncoder().encode(storedSettings)
+        let imported = try JSONDecoder().decode(PlaylistSettingsItem.self, from: exported)
+
+        #expect(imported.views == storedSettings.views)
+        #expect(imported.recent == storedSettings.recent)
+        #expect(imported.encrypted == storedSettings.encrypted)
+        #expect(imported.favorites == storedSettings.favorites)
+    }
+
     @Test func initCreatesMissingSettingsAndUsesStoredEncryptionState() throws {
         let identity = makeIdentity()
         let playlist = makePlaylistItem(
@@ -236,10 +269,11 @@ struct PlaylistSettingsTests {
 
         let didUpdate = await viewModel.updatePlaylist()
         let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+        let storedState = try fetchState(from: database, identity: identity)
 
         #expect(didUpdate == true)
-        #expect(storedPlaylist.data == preparedUpdatedPlaylist.data)
-        #expect(storedPlaylist.data != originalData)
+        #expect(storedState.data == preparedUpdatedPlaylist.data)
+        #expect(storedState.data != originalData)
         #expect(viewModel.progress == false)
         #expect(viewModel.progressText == nil)
         #expect(viewModel.dataChanged == true)
@@ -382,10 +416,11 @@ struct PlaylistSettingsTests {
 
         let didEncrypt = await viewModel.onEncrypt()
         let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+        let storedState = try fetchState(from: database, identity: identity)
 
         #expect(didEncrypt == true)
         #expect(storedPlaylist.url == encryptedPlaylist.url)
-        #expect(storedPlaylist.data == encryptedPlaylist.data)
+        #expect(storedState.data == encryptedPlaylist.data)
         #expect(storedPlaylist.salt == encryptedPlaylist.salt)
         #expect(storedPlaylist.encrypted == true)
         #expect(viewModel.progress == false)
@@ -433,10 +468,11 @@ struct PlaylistSettingsTests {
 
         let didDecrypt = await viewModel.onDecrypt()
         let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+        let storedState = try fetchState(from: database, identity: identity)
 
         #expect(didDecrypt == true)
         #expect(storedPlaylist.url == decryptedContent.url)
-        #expect(storedPlaylist.data == expectedCompressedData)
+        #expect(storedState.data == expectedCompressedData)
         #expect(storedPlaylist.salt == nil)
         #expect(storedPlaylist.encrypted == false)
         #expect(viewModel.playlistDecryptedContent == nil)
@@ -527,10 +563,11 @@ struct PlaylistSettingsTests {
 
         let didUpdate = await viewModel.updatePlaylistDecrypted()
         let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+        let storedState = try fetchState(from: database, identity: identity)
 
         #expect(didUpdate == true)
         #expect(storedPlaylist.url == preparedUpdatedPlaylist.url)
-        #expect(storedPlaylist.data == preparedUpdatedPlaylist.data)
+        #expect(storedState.data == preparedUpdatedPlaylist.data)
         #expect(storedPlaylist.salt == preparedUpdatedPlaylist.salt)
         #expect(storedPlaylist.encrypted == true)
         #expect(viewModel.decryptPin == "")
@@ -750,10 +787,11 @@ struct PlaylistSettingsTests {
         viewModel.editedUrlTvg = "https://example.com/new-guide.xml"
         let saved = await viewModel.saveInfo()
         let storedPlaylist = try fetchPlaylist(from: loaded.database, identity: identity)
+        let storedState = try fetchState(from: loaded.database, identity: identity)
 
         #expect(saved == true)
         #expect(storedPlaylist.url == preparedUpdatedPlaylist.url)
-        #expect(storedPlaylist.data == preparedUpdatedPlaylist.data)
+        #expect(storedState.data == preparedUpdatedPlaylist.data)
         #expect(storedPlaylist.icon == preparedUpdatedPlaylist.icon)
         #expect(storedPlaylist.date == identity.date)
         #expect(viewModel.didRefreshPlaylist == true)
@@ -811,11 +849,12 @@ struct PlaylistSettingsTests {
         viewModel.editedURL = "https://example.com/new.m3u"
         let saved = await viewModel.saveInfo()
         let storedPlaylist = try fetchPlaylist(from: database, identity: identity)
+        let storedState = try fetchState(from: database, identity: identity)
 
         #expect(saved == true)
         #expect(storedPlaylist.salt == preparedEncryptedPlaylist.salt)
         #expect(storedPlaylist.encrypted == true)
-        #expect(storedPlaylist.data == preparedEncryptedPlaylist.data)
+        #expect(storedState.data == preparedEncryptedPlaylist.data)
     }
 
     @Test func saveInfoKeepsOldDataWhenDownloadFails() async throws {
@@ -1042,6 +1081,14 @@ private extension PlaylistSettingsTests {
 
         for item in items {
             database.mainContext.insert(item)
+            if let identity = item.identity {
+                let state = item.settings ?? PlaylistSettingsItem(order: nil)
+                state.playlistName = identity.name
+                state.playlistDate = identity.date
+                state.data = item.data
+                item.settings = state
+                database.mainContext.insert(state)
+            }
         }
 
         try database.mainContext.save()
@@ -1057,6 +1104,18 @@ private extension PlaylistSettingsTests {
             database.mainContext.fetch(FetchDescriptor<PlaylistItem>())
                 .first(where: { $0.identity == identity })
         )
+    }
+
+    func fetchState(
+        from database: DatabaseService,
+        identity: PlaylistItem.Identity
+    ) throws -> PlaylistSettingsItem {
+        let state = try PlaylistSettingsItem.state(
+            for: identity,
+            in: database.mainContext,
+            create: false
+        )
+        return try #require(state)
     }
 
     func expectContent(_ actual: PlaylistItem.Content, equals expected: PlaylistItem.Content) {
@@ -1133,6 +1192,34 @@ private final class MockPlaylistAddService: PlaylistAddServiceInterface, @unchec
             )
         )
         return try await prepareHandler(name, urlString, pin, urlTvg, urlImg, tvgLogo)
+    }
+
+    func preparePlaylist(
+        from source: PlaylistSourceSnapshot,
+        cachedData: Data?,
+        pin: String?,
+        progress: ProgressHandler
+    ) async throws -> PreparedPlaylist {
+        guard let cachedData else {
+            return try await preparePlaylist(
+                name: source.name,
+                urlString: String(data: source.url, encoding: .utf8) ?? "",
+                pin: pin,
+                urlTvg: source.urlTvg,
+                urlImg: source.urlImg,
+                tvgLogo: source.tvgLogo,
+                progress: progress
+            )
+        }
+        return PreparedPlaylist(
+            name: source.name,
+            date: source.date,
+            icon: source.icon,
+            url: source.url,
+            data: cachedData,
+            salt: source.salt,
+            encrypted: source.encrypted
+        )
     }
 
     func encryptPlaylist(_ preparedPlaylist: PreparedPlaylist, pin: String) async throws -> PreparedPlaylist {

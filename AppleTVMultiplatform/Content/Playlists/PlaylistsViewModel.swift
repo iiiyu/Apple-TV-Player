@@ -31,9 +31,13 @@ final class PlaylistsViewModel {
         if let identity = playlist.identity {
             logger.info("Delete playlist", private: identity)
         }
-        let preparedPlaylist = PreparedPlaylist(playlist)
+        let state = try? PlaylistSettingsItem.state(for: playlist, in: databaseService.mainContext, create: false)
+        let preparedPlaylist = PreparedPlaylist(playlist, cachedData: state?.data)
         let reloadCurrent = playlist.identity == selectedPlaylist?.identity
         databaseService.mainContext.delete(playlist)
+        if let state {
+            databaseService.mainContext.delete(state)
+        }
         try? databaseService.mainContext.save()
         if reloadCurrent {
             selectedPlaylist = nil

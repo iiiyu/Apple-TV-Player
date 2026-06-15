@@ -317,32 +317,32 @@ struct PlaylistsViewPreviews: PreviewProvider {
                 mainContext.insert(
                     PlaylistItem(
                         name: "Netflix", date: now.addingTimeInterval(100),
-                        icon: nil, url: nil, data: nil, salt: nil, encrypted: false
+                        icon: nil, url: nil, salt: nil, encrypted: false
                     )
                 )
                 mainContext.insert(
                     PlaylistItem(
                         name: "America TV", date: now.addingTimeInterval(200),
                         icon: "https://raw.githubusercontent.com/mikehouse/Apple-TV-Player/refs/heads/master/logo.png",
-                        url: nil, data: nil, salt: nil, encrypted: false
+                        url: nil, salt: nil, encrypted: false
                     )
                 )
                 mainContext.insert(
                     PlaylistItem(
                         name: "Amazon", date: now.addingTimeInterval(300),
-                        icon: nil, url: nil, data: nil, salt: nil, encrypted: false
+                        icon: nil, url: nil, salt: nil, encrypted: false
                     )
                 )
                 mainContext.insert(
                     PlaylistItem(
                         name: "Hulu", date: now.addingTimeInterval(304),
-                        icon: nil, url: nil, data: nil, salt: nil, encrypted: false
+                        icon: nil, url: nil, salt: nil, encrypted: false
                     )
                 )
                 mainContext.insert(
                     PlaylistItem(
                         name: "HBO", date: now.addingTimeInterval(301),
-                        icon: nil, url: nil, data: nil, salt: nil, encrypted: false
+                        icon: nil, url: nil, salt: nil, encrypted: false
                     )
                 )
                 return database

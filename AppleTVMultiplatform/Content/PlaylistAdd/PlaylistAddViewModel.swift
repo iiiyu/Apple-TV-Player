@@ -72,13 +72,21 @@ final class PlaylistAddViewModel {
                 date: prepared.date,
                 icon: prepared.icon,
                 url: prepared.url,
-                data: prepared.data,
                 salt: prepared.salt,
                 encrypted: prepared.encrypted,
-                settings: .init(order: nil)
+                urlTvg: normalizedInfo(urlTvg),
+                urlImg: normalizedInfo(urlImg),
+                tvgLogo: normalizedInfo(tvgLogo)
+            )
+            let settings = PlaylistSettingsItem(
+                playlistName: prepared.name,
+                playlistDate: prepared.date,
+                data: prepared.data,
+                order: nil
             )
 
             databaseService.mainContext.insert(playlist)
+            databaseService.mainContext.insert(settings)
             try databaseService.mainContext.save()
             return true
         } catch {
@@ -111,5 +119,10 @@ private extension PlaylistAddViewModel {
         }
 
         return "\(error)"
+    }
+
+    func normalizedInfo(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

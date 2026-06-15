@@ -23,23 +23,35 @@ final class DatabaseService: DatabaseServiceInterface {
     /// 
     init(isStoredInMemoryOnly: Bool) {
         let logger = Container.shared.logger()
+        let cloudSchema = Schema([PlaylistItem.self])
+        let localSchema = Schema([PlaylistSettingsItem.self, AppSettings.self])
         let schema = Schema([PlaylistItem.self, PlaylistSettingsItem.self, AppSettings.self])
         let localDatabase = ModelConfiguration.CloudKitDatabase.none
         let cloudKitDatabase = ModelConfiguration.CloudKitDatabase.private(Self.cloudKitContainerIdentifier)
         if isStoredInMemoryOnly {
-            let modelConfiguration = ModelConfiguration(
-                schema: schema,
+            let cloudModelConfiguration = ModelConfiguration(
+                "CloudPlaylists",
+                schema: cloudSchema,
+                isStoredInMemoryOnly: isStoredInMemoryOnly,
+                cloudKitDatabase: localDatabase
+            )
+            let localModelConfiguration = ModelConfiguration(
+                "LocalPlaybackState",
+                schema: localSchema,
                 isStoredInMemoryOnly: isStoredInMemoryOnly,
                 cloudKitDatabase: localDatabase
             )
             do {
-                sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
-                logger.info("Database model container", private: modelConfiguration.url.path)
+                sharedModelContainer = try ModelContainer(
+                    for: schema,
+                    configurations: [cloudModelConfiguration, localModelConfiguration]
+                )
+                logger.info("Database model container", private: localModelConfiguration.url.path)
             } catch {
                 fatalError("Could not create ModelContainer: \(error)")
             }
         } else {
-            var modelConfiguration: ModelConfiguration?
+            var modelConfigurations: [ModelConfiguration]?
             var usesCloudKit = false
             #if DEBUG
             if let path = ProcessInfo.processInfo.arguments.first(where: {
@@ -50,33 +62,44 @@ final class DatabaseService: DatabaseServiceInterface {
                 $0.isEmpty ? nil : $0
             }) {
                 let url = URL(fileURLWithPath: path, isDirectory: false)
-                modelConfiguration = ModelConfiguration(
-                    schema: schema, url: url, allowsSave: false, cloudKitDatabase: localDatabase)
+                modelConfigurations = [
+                    ModelConfiguration(schema: schema, url: url, allowsSave: false, cloudKitDatabase: localDatabase)
+                ]
             } else if ProcessInfo.processInfo.arguments.contains("--in-memory-database-only") {
-                modelConfiguration = ModelConfiguration(
-                    schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: localDatabase)
+                modelConfigurations = [
+                    ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: localDatabase)
+                ]
             }
             #endif
-            if modelConfiguration == nil {
-                modelConfiguration = ModelConfiguration(
-                    schema: schema,
-                    isStoredInMemoryOnly: isStoredInMemoryOnly,
-                    cloudKitDatabase: cloudKitDatabase
-                )
+            if modelConfigurations == nil {
+                modelConfigurations = [
+                    ModelConfiguration(
+                        "CloudPlaylists",
+                        schema: cloudSchema,
+                        isStoredInMemoryOnly: isStoredInMemoryOnly,
+                        cloudKitDatabase: cloudKitDatabase
+                    ),
+                    ModelConfiguration(
+                        "LocalPlaybackState",
+                        schema: localSchema,
+                        isStoredInMemoryOnly: isStoredInMemoryOnly,
+                        cloudKitDatabase: localDatabase
+                    )
+                ]
                 usesCloudKit = true
             }
-            guard let modelConfiguration else {
+            guard let modelConfigurations else {
                 fatalError("Could not create ModelContainer.")
             }
             do {
-                sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+                sharedModelContainer = try ModelContainer(for: schema, configurations: modelConfigurations)
                 if usesCloudKit {
                     logger.info(
-                        "CloudKit database model container",
-                        private: "\(Self.cloudKitContainerIdentifier) \(modelConfiguration.url.path)"
+                        "CloudKit playlist model container",
+                        private: Self.cloudKitContainerIdentifier
                     )
                 } else {
-                    logger.info("Database model container", private: modelConfiguration.url.path)
+                    logger.info("Database model container")
                 }
             } catch {
                 guard usesCloudKit else {
@@ -84,22 +107,39 @@ final class DatabaseService: DatabaseServiceInterface {
                 }
 
                 logger.error(error)
-#if DEBUG
-                logger.info("CloudKit model container unavailable. Falling back to local SwiftData store.")
-                let localModelConfiguration = ModelConfiguration(
-                    schema: schema,
-                    isStoredInMemoryOnly: isStoredInMemoryOnly,
-                    cloudKitDatabase: localDatabase
-                )
+                logger.info("CloudKit playlist container unavailable. Falling back to local SwiftData stores.")
+                let localModelConfigurations = [
+                    ModelConfiguration(
+                        "CloudPlaylists",
+                        schema: cloudSchema,
+                        isStoredInMemoryOnly: isStoredInMemoryOnly,
+                        cloudKitDatabase: localDatabase
+                    ),
+                    ModelConfiguration(
+                        "LocalPlaybackState",
+                        schema: localSchema,
+                        isStoredInMemoryOnly: isStoredInMemoryOnly,
+                        cloudKitDatabase: localDatabase
+                    )
+                ]
                 do {
-                    sharedModelContainer = try ModelContainer(for: schema, configurations: [localModelConfiguration])
-                    logger.info("Database model container", private: localModelConfiguration.url.path)
+                    sharedModelContainer = try ModelContainer(for: schema, configurations: localModelConfigurations)
+                    logger.info("Database model container")
                 } catch {
-                    fatalError("Could not create ModelContainer: \(error)")
+                    logger.error(error)
+                    logger.info("Local SwiftData store unavailable. Falling back to an in-memory store.")
+                    let inMemoryModelConfiguration = ModelConfiguration(
+                        schema: schema,
+                        isStoredInMemoryOnly: true,
+                        cloudKitDatabase: localDatabase
+                    )
+                    do {
+                        sharedModelContainer = try ModelContainer(for: schema, configurations: [inMemoryModelConfiguration])
+                        logger.info("Database model container", private: inMemoryModelConfiguration.url.path)
+                    } catch {
+                        fatalError("Could not create ModelContainer: \(error)")
+                    }
                 }
-#else
-                fatalError("Could not create CloudKit-backed ModelContainer: \(error)")
-#endif
             }
         }
     }

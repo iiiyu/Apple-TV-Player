@@ -42,9 +42,20 @@ struct PlaylistAddViewModelTests {
         #expect(storedPlaylist.date == preparedPlaylist.date)
         #expect(storedPlaylist.icon == preparedPlaylist.icon)
         #expect(storedPlaylist.url == preparedPlaylist.url)
-        #expect(storedPlaylist.data == preparedPlaylist.data)
         #expect(storedPlaylist.salt == preparedPlaylist.salt)
         #expect(storedPlaylist.encrypted == preparedPlaylist.encrypted)
+        #expect(storedPlaylist.urlTvg == "https://example.com/program-guide.xml")
+        #expect(storedPlaylist.urlImg == "https://example.com/icon.png")
+        #expect(storedPlaylist.tvgLogo == "https://example.com/playlist-logo.png")
+
+        let identity = try #require(storedPlaylist.identity)
+        let state = try #require(try PlaylistSettingsItem.state(
+            for: identity,
+            in: database.mainContext,
+            create: false
+        ))
+        #expect(state.data == preparedPlaylist.data)
+        #expect(state.order == nil)
     }
 
     @MainActor
@@ -107,6 +118,16 @@ private final class MockPlaylistAddService: PlaylistAddServiceInterface {
         return preparedPlaylist
     }
 
+    func preparePlaylist(
+        from source: PlaylistSourceSnapshot,
+        cachedData: Data?,
+        pin: String?,
+        progress: @Sendable ([PlaylistAddService.Progress], PlaylistAddService.Progress) -> Void
+    ) async throws -> PreparedPlaylist {
+        Issue.record("preparePlaylist(from:) should not be called in PlaylistAddViewModelTests.")
+        throw PlaylistAddService.Error.invalidPreparedPlaylist
+    }
+
     func restorePlaylist(_ preparedPlaylist: PreparedPlaylist, pin: String?) async throws -> RestoredPlaylist {
         Issue.record("restorePlaylist should not be called in PlaylistAddViewModelTests.")
         throw PlaylistAddService.Error.invalidPreparedPlaylist
@@ -125,6 +146,15 @@ private final class FailingPlaylistAddService: PlaylistAddServiceInterface {
         urlTvg: String?,
         urlImg: String?,
         tvgLogo: String?,
+        progress: @Sendable ([PlaylistAddService.Progress], PlaylistAddService.Progress) -> Void
+    ) async throws -> PreparedPlaylist {
+        throw PlaylistAddService.Error.invalidPlaylist
+    }
+
+    func preparePlaylist(
+        from source: PlaylistSourceSnapshot,
+        cachedData: Data?,
+        pin: String?,
         progress: @Sendable ([PlaylistAddService.Progress], PlaylistAddService.Progress) -> Void
     ) async throws -> PreparedPlaylist {
         throw PlaylistAddService.Error.invalidPlaylist

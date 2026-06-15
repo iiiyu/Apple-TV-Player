@@ -14,6 +14,7 @@ final class PlaylistSettingsViewModel {
 
     let identity: PlaylistItem.Identity
     private var playlist: PlaylistItem?
+    private var state: PlaylistSettingsItem?
 
     var order: PlaylistSettingsItem.StreamListOrder = .none
     var pinEnabled = false
@@ -58,12 +59,10 @@ final class PlaylistSettingsViewModel {
         let fetch = FetchDescriptor<PlaylistItem>()
         playlist = (try? databaseService.mainContext.fetch(fetch))?
             .first(where: { $0.identity == identity })
-        order = playlist?.settings?.orderType ?? .none
+        state = try? PlaylistSettingsItem.state(for: identity, in: databaseService.mainContext)
+        order = state?.orderType ?? .none
         pinEnabled = playlist?.encrypted ?? false
         infoLocked = playlist?.encrypted ?? false
-        if playlist?.settings == nil {
-            playlist?.settings = PlaylistSettingsItem(order: nil)
-        }
         snapshot = makeSnapshot()
     }
 
@@ -88,7 +87,7 @@ extension PlaylistSettingsViewModel {
 
     func onOrderChange() -> Bool {
         logger.info("Change order", private: identity)
-        playlist?.settings?.orderType = order
+        state?.orderType = order
         updateDataChanged()
         return true
     }
@@ -112,10 +111,10 @@ extension PlaylistSettingsViewModel {
             showPinCodeDecryptProgramGuideView = true
             return false
         } else {
-            guard let preparedPlaylist = PreparedPlaylist(playlist) else {
-                return false
-            }
             do {
+                guard let preparedPlaylist = try await preparedPlaylist(for: playlist, pin: nil) else {
+                    return false
+                }
                 // Recover playlist raw data without pin.
                 let content = try await playlistAddService.restorePlaylist(preparedPlaylist, pin: nil).content
                 didUpdateProgramGuide = try await updateProgramGuide(content)
@@ -186,10 +185,10 @@ extension PlaylistSettingsViewModel {
             showPinCodeDecryptPlaylistView = true
             return false
         } else {
-            guard let preparedCachedPlaylist = PreparedPlaylist(playlist) else {
-                return false
-            }
             do {
+                guard let preparedCachedPlaylist = try await preparedPlaylist(for: playlist, pin: nil) else {
+                    return false
+                }
                 // Recover playlist raw data without pin.
                 let content = try await playlistAddService.restorePlaylist(preparedCachedPlaylist, pin: nil).content
                 didUpdatePlaylist = try await updatePlaylist(playlist: playlist, content: content)
@@ -298,10 +297,10 @@ extension PlaylistSettingsViewModel {
         // The url and salt must be written together with the data: with a pin
         // the prepared playlist is encrypted under a fresh salt.
         playlist.url = preparedUpdatedPlaylist.url
-        playlist.data = preparedUpdatedPlaylist.data
         playlist.icon = preparedUpdatedPlaylist.icon
         playlist.salt = preparedUpdatedPlaylist.salt
         playlist.encrypted = preparedUpdatedPlaylist.encrypted
+        state?.data = preparedUpdatedPlaylist.data
         return true
     }
 }
@@ -348,7 +347,7 @@ extension PlaylistSettingsViewModel {
               let date = playlist.date,
               let name = playlist.name,
               let url = playlist.url,
-              let data = playlist.data else {
+              let data = state?.data else {
             return false
         }
         assert(!playlist.encrypted)
@@ -364,7 +363,7 @@ extension PlaylistSettingsViewModel {
             )
             let encryptedPlaylist = try await playlistAddService.encryptPlaylist(preparedPlaylist, pin: pin)
             playlist.url = encryptedPlaylist.url
-            playlist.data = encryptedPlaylist.data
+            state?.data = encryptedPlaylist.data
             playlist.salt = encryptedPlaylist.salt
             playlist.encrypted = encryptedPlaylist.encrypted
             // Keep the info-edit pin in sync so a later save re-encrypts
@@ -393,7 +392,7 @@ extension PlaylistSettingsViewModel {
             return false
         }
         do {
-            playlist.data = try await DataCompressor().compress(playlistDecryptedContent.data)
+            state?.data = try await DataCompressor().compress(playlistDecryptedContent.data)
             playlist.url = playlistDecryptedContent.url
             playlist.salt = nil
             playlist.encrypted = false
@@ -427,7 +426,7 @@ extension PlaylistSettingsViewModel {
 
     func loadInfo() async {
         guard !infoLoaded, !infoLocked, let playlist,
-              let prepared = PreparedPlaylist(playlist) else {
+              let prepared = try? await preparedPlaylist(for: playlist, pin: nil) else {
             return
         }
         do {
@@ -521,6 +520,11 @@ extension PlaylistSettingsViewModel {
     private func rename(_ playlist: PlaylistItem, to name: String) -> Bool {
         logger.info("Rename playlist", private: identity)
         playlist.name = name
+        if name != identity.name {
+            let updatedIdentity = PlaylistItem.Identity(name: name, date: identity.date)
+            changedIdentity = updatedIdentity
+            state?.updateIdentity(updatedIdentity)
+        }
         do {
             try databaseService.mainContext.save()
         } catch {
@@ -528,9 +532,6 @@ extension PlaylistSettingsViewModel {
             logger.error(error)
             self.error = .init(error: error)
             return false
-        }
-        if name != identity.name {
-            changedIdentity = .init(name: name, date: identity.date)
         }
         infoSnapshot = makeInfoSnapshot()
         return true
@@ -595,17 +596,20 @@ extension PlaylistSettingsViewModel {
                 return fail(String(localized: "The URL does not contain a valid playlist."))
             }
             playlist.url = prepared.url
-            playlist.data = prepared.data
             playlist.icon = prepared.icon
             playlist.salt = prepared.salt
             playlist.encrypted = prepared.encrypted
+            playlist.urlTvg = normalizedInfo(editedUrlTvg)
+            playlist.urlImg = normalizedInfo(editedUrlImg)
+            playlist.tvgLogo = normalizedInfo(editedTvgLogo)
+            state?.data = prepared.data
             if name != identity.name {
                 playlist.name = name
+                let updatedIdentity = PlaylistItem.Identity(name: name, date: identity.date)
+                changedIdentity = updatedIdentity
+                state?.updateIdentity(updatedIdentity)
             }
             try databaseService.mainContext.save()
-            if name != identity.name {
-                changedIdentity = .init(name: name, date: identity.date)
-            }
             didRefreshPlaylist = true
             infoSnapshot = makeInfoSnapshot()
             return true
@@ -621,7 +625,8 @@ extension PlaylistSettingsViewModel {
         if let unlockedContent {
             return unlockedContent
         }
-        guard !playlist.encrypted, let prepared = PreparedPlaylist(playlist) else {
+        guard !playlist.encrypted,
+              let prepared = try? await preparedPlaylist(for: playlist, pin: nil) else {
             return nil
         }
         return try? await playlistAddService.restorePlaylist(prepared, pin: nil).content
@@ -645,5 +650,33 @@ extension PlaylistSettingsViewModel {
     private func fail(_ message: String) -> Bool {
         self.error = .init(error: message)
         return false
+    }
+
+    private func preparedPlaylist(for playlist: PlaylistItem, pin: String?) async throws -> PreparedPlaylist? {
+        guard let source = PlaylistSourceSnapshot(playlist),
+              let state else {
+            return nil
+        }
+
+        let prepared = try await playlistAddService.preparePlaylist(
+            from: source,
+            cachedData: state.data,
+            pin: pin,
+            progress: { [weak self] _, step in
+                Task { @MainActor in
+                    switch step {
+                    case .start, .complete:
+                        break
+                    default:
+                        self?.progressText = .init(string: step.title)
+                    }
+                }
+            }
+        )
+        if state.data != prepared.data {
+            state.data = prepared.data
+            try databaseService.mainContext.save()
+        }
+        return prepared
     }
 }

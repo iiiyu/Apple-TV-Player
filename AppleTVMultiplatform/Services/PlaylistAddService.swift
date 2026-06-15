@@ -4,8 +4,21 @@ import Foundation
 protocol PlaylistAddServiceInterface: AnyObject, Sendable {
     typealias ProgressHandler = @Sendable ([PlaylistAddService.Progress], PlaylistAddService.Progress) -> Void
     func preparePlaylist(name: String?, urlString: String, pin: String?, urlTvg: String?, urlImg: String?, tvgLogo: String?, progress: ProgressHandler) async throws -> PreparedPlaylist
+    func preparePlaylist(from source: PlaylistSourceSnapshot, cachedData: Data?, pin: String?, progress: ProgressHandler) async throws -> PreparedPlaylist
     func encryptPlaylist(_ preparedPlaylist: PreparedPlaylist, pin: String) async throws -> PreparedPlaylist
     func restorePlaylist(_ preparedPlaylist: PreparedPlaylist, pin: String?) async throws -> RestoredPlaylist
+}
+
+struct PlaylistSourceSnapshot: Sendable, Equatable {
+    let name: String
+    let date: Date
+    let icon: String?
+    let url: Data
+    let salt: Data?
+    let encrypted: Bool
+    let urlTvg: String?
+    let urlImg: String?
+    let tvgLogo: String?
 }
 
 struct PreparedPlaylist: Sendable, Equatable {
@@ -42,11 +55,15 @@ extension RestoredPlaylist {
 extension PreparedPlaylist {
 
     init?(_ playlistItem: PlaylistItem) {
+        self.init(playlistItem, cachedData: playlistItem.data)
+    }
+
+    init?(_ playlistItem: PlaylistItem, cachedData: Data?) {
         guard
             let name = playlistItem.name,
             let date = playlistItem.date,
             let url = playlistItem.url,
-            let data = playlistItem.data
+            let data = cachedData
         else {
             return nil
         }
@@ -59,6 +76,29 @@ extension PreparedPlaylist {
             data: data,
             salt: playlistItem.salt,
             encrypted: playlistItem.encrypted
+        )
+    }
+}
+
+extension PlaylistSourceSnapshot {
+
+    init?(_ playlistItem: PlaylistItem) {
+        guard let name = playlistItem.name,
+              let date = playlistItem.date,
+              let url = playlistItem.url else {
+            return nil
+        }
+
+        self.init(
+            name: name,
+            date: date,
+            icon: playlistItem.icon,
+            url: url,
+            salt: playlistItem.salt,
+            encrypted: playlistItem.encrypted,
+            urlTvg: playlistItem.urlTvg,
+            urlImg: playlistItem.urlImg,
+            tvgLogo: playlistItem.tvgLogo
         )
     }
 }
@@ -193,6 +233,60 @@ actor PlaylistAddService: PlaylistAddServiceInterface {
             data: encryptedPlaylistData,
             salt: salt,
             encrypted: true
+        )
+    }
+
+    func preparePlaylist(
+        from source: PlaylistSourceSnapshot,
+        cachedData: Data?,
+        pin: String?,
+        progress: ProgressHandler
+    ) async throws -> PreparedPlaylist {
+        if let cachedData {
+            return PreparedPlaylist(
+                name: source.name,
+                date: source.date,
+                icon: source.icon,
+                url: source.url,
+                data: cachedData,
+                salt: source.salt,
+                encrypted: source.encrypted
+            )
+        }
+
+        let restoredURLData = try restoreSourceURL(from: source, pin: pin)
+        guard let urlString = String(data: restoredURLData, encoding: .utf8) else {
+            throw Error.invalidPreparedPlaylist
+        }
+
+        let downloaded = try await preparePlaylist(
+            name: source.name,
+            urlString: urlString,
+            pin: nil,
+            urlTvg: source.urlTvg,
+            urlImg: source.urlImg,
+            tvgLogo: source.tvgLogo,
+            progress: progress
+        )
+        let cachedData: Data
+        if source.encrypted {
+            guard let normalizedPin = normalized(pin),
+                  let salt = source.salt else {
+                throw Error.pinRequired
+            }
+            cachedData = try crypto.encrypt(downloaded.data, pin: normalizedPin, salt: salt)
+        } else {
+            cachedData = downloaded.data
+        }
+
+        return PreparedPlaylist(
+            name: source.name,
+            date: source.date,
+            icon: downloaded.icon ?? source.icon,
+            url: source.url,
+            data: cachedData,
+            salt: source.salt,
+            encrypted: source.encrypted
         )
     }
 
@@ -431,6 +525,26 @@ private extension PlaylistAddService {
             )
         } catch {
             throw Error.invalidPreparedPlaylist
+        }
+    }
+
+    private func restoreSourceURL(from source: PlaylistSourceSnapshot, pin: String?) throws -> Data {
+        guard source.encrypted else {
+            return source.url
+        }
+
+        guard let normalizedPin = normalized(pin) else {
+            throw Error.pinRequired
+        }
+
+        guard let salt = source.salt else {
+            throw Error.invalidPreparedPlaylist
+        }
+
+        do {
+            return try crypto.decrypt(source.url, pin: normalizedPin, salt: salt)
+        } catch {
+            throw Error.invalidPin
         }
     }
 }

@@ -386,7 +386,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -435,7 +435,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -516,7 +516,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -607,7 +607,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -684,7 +684,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -777,7 +777,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -900,7 +900,7 @@ struct PlaylistViewModelTests {
             date: expectedContent.identity.date, icon: nil, url: nil, data: nil,
             salt: nil, encrypted: false, settings: settings
         )
-        database.mainContext.insert(item)
+        insert(item, into: database)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
 
@@ -1027,6 +1027,19 @@ private extension PlaylistViewModelTests {
             tvgLogo: nil,
             streams: streams
         )
+    }
+
+    func insert(_ item: PlaylistItem, into database: DatabaseService) {
+        database.mainContext.insert(item)
+        guard let identity = item.identity else {
+            return
+        }
+        let state = item.settings ?? PlaylistSettingsItem(order: nil)
+        state.playlistName = identity.name
+        state.playlistDate = identity.date
+        state.data = item.data
+        item.settings = state
+        database.mainContext.insert(state)
     }
 }
 

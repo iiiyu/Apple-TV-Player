@@ -201,6 +201,15 @@ private final class PlaylistAddErrorServicePreviewMock: PlaylistAddServiceInterf
         throw NSError(domain: "error.domain.preview", code: 11)
     }
 
+    func preparePlaylist(
+        from source: PlaylistSourceSnapshot,
+        cachedData: Data?,
+        pin: String?,
+        progress: ProgressHandler
+    ) async throws -> PreparedPlaylist {
+        throw NSError(domain: "error.domain.preview", code: 13)
+    }
+
     func restorePlaylist(_ preparedPlaylist: PreparedPlaylist, pin: String?) async throws -> RestoredPlaylist {
         throw NSError(domain: "error.domain.preview", code: 12)
     }

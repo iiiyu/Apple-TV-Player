@@ -123,13 +123,12 @@ final class PlaylistViewModel {
                 playlists = try await loadPlaylist(reloadProgramGuide: true)
             }
             let streams = playlists.first?.streams ?? []
-            let playlistItem = playlist
-            guard let settings = playlistItem?.settings else {
+            guard let settings = playlistState(create: false) else {
                 self.streams = [streams]
                 updateCategories(from: streams)
                 return
             }
-            let order = playlistItem?.settings?.orderType ?? .none
+            let order = settings.orderType
             favoriteHmacs = Set(settings.favorites)
             logger.info("Sorting streams with '\(order)'", private: content.id)
             let measure = await measureTime { @MainActor [self] in
@@ -241,7 +240,7 @@ final class PlaylistViewModel {
     }
 
     func toggleFavorite(_ stream: PlaylistParser.Stream) {
-        guard let playlist, let settings = playlist.settings else {
+        guard let settings = playlistState(create: true) else {
             return
         }
         let hmac = hmacValue(for: stream)
@@ -295,7 +294,7 @@ final class PlaylistViewModel {
     }
 
     func selectedStream(_ stream: PlaylistParser.Stream) {
-        if let playlist, let settings = playlist.settings {
+        if let settings = playlistState(create: true) {
             let (hmac, encrypted) = encode(title: title(for: stream))
             var views = settings.views
             var recent = settings.recent
@@ -368,6 +367,14 @@ final class PlaylistViewModel {
         let fetch = FetchDescriptor<PlaylistItem>()
         return try? databaseService.mainContext.fetch(fetch)
             .first(where: { $0.identity == content.identity })
+    }
+
+    private func playlistState(create: Bool) -> PlaylistSettingsItem? {
+        try? PlaylistSettingsItem.state(
+            for: content.identity,
+            in: databaseService.mainContext,
+            create: create
+        )
     }
 
     private func updateCategories(from streams: [PlaylistParser.Stream]) {
