@@ -142,6 +142,9 @@ struct StreamView: View {
                     playbackErrorView(playbackErrorMessage)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                tvOSFullScreenControls()
+            }
         }
         .fullScreenCover(isPresented: $reselectStream, onDismiss: {
             reloadCurrentProgram = .init()
@@ -165,6 +168,9 @@ struct StreamView: View {
                 if let playbackErrorMessage {
                     playbackErrorView(playbackErrorMessage)
                 }
+            }
+            .overlay(alignment: .topTrailing) {
+                tvOSFullScreenControls()
             }
         }
         .onChange(of: focusedStream) {
@@ -195,11 +201,7 @@ struct StreamView: View {
             HStack(spacing: 10) {
                 Text(viewModel.title)
                 Text(viewModel.currentTimeText(at: now))
-                Button("", systemImage: "play.rectangle") {
-                    togglePlaybackEngine()
-                }
-                .accessibilityIdentifier("stream-player-engine")
-                .accessibilityLabel(useSGPlayerCompatibility ? "Use AVPlayer" : "Use SGPlayer")
+                tvOSPlaybackEngineButton()
                 Button("", systemImage: "info.circle") {
                     presentMediaInfo()
                 }
@@ -209,6 +211,41 @@ struct StreamView: View {
             .foregroundStyle(.secondary)
             .monospacedDigit()
         }
+    }
+
+    private var targetPlaybackEngineName: String {
+        useSGPlayerCompatibility ? "AVPlayer" : "SGPlayer"
+    }
+
+    private func tvOSPlaybackEngineButton() -> some View {
+        Button {
+            togglePlaybackEngine()
+        } label: {
+            Label {
+                Text(targetPlaybackEngineName)
+            } icon: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+            }
+        }
+        .accessibilityIdentifier("stream-player-engine")
+        .accessibilityLabel(Text("Use \(targetPlaybackEngineName)"))
+    }
+
+    private func tvOSFullScreenControls() -> some View {
+        HStack(spacing: 12) {
+            tvOSPlaybackEngineButton()
+            Button {
+                presentMediaInfo()
+            } label: {
+                Image(systemName: "info.circle")
+            }
+            .accessibilityIdentifier("stream-info")
+            .accessibilityLabel("Stream Info")
+        }
+        .font(.headline)
+        .controlSize(.large)
+        .padding(.top, 48)
+        .padding(.trailing, 56)
     }
 #endif
     private func presentMediaInfo() {
@@ -306,7 +343,7 @@ struct StreamView: View {
     }
 
     private func handlePlaybackError(_ message: String?) {
-        Task { @MainActor in
+        DispatchQueue.main.async {
             guard playbackErrorMessage != message else { return }
             playbackErrorMessage = message
         }
@@ -316,6 +353,10 @@ struct StreamView: View {
         playbackErrorMessage = nil
 
         if useSGPlayerCompatibility {
+#if os(tvOS)
+            sgPlayer?.pause()
+            tvOSPlayer.retry()
+#endif
             useSGPlayerCompatibility = false
             playbackReloadID = UUID()
             return
@@ -326,6 +367,14 @@ struct StreamView: View {
             return
         }
 
+#if os(tvOS)
+        tvOSPlayer.pause()
+        if sgPlayer == nil {
+            sgPlayer = SGPlayerCompatibilitySession(urlString: viewModel.stream.url)
+        }
+        sgPlayer?.replace(with: viewModel.stream.url)
+        sgPlayer?.play()
+#endif
         useSGPlayerCompatibility = true
         playbackReloadID = UUID()
     }
@@ -598,6 +647,11 @@ private struct TvOSPlayerView: UIViewControllerRepresentable {
         uiViewController.player?.play()
     }
 
+    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
+        uiViewController.player?.pause()
+        uiViewController.player = nil
+    }
+
     func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Self.UIViewControllerType, context: Self.Context) -> CGSize? {
         let multiplier: CGFloat = homeTvOSStreamLayout ? 1 : 2.8 / 3.0
         guard compact, let width = proposal.width.map({ $0 * multiplier }) else { return nil }
@@ -626,6 +680,10 @@ private final class TvOSPlayer {
 
     func retry() {
         controller.retry()
+    }
+
+    func pause() {
+        controller.player.pause()
     }
 }
 #else

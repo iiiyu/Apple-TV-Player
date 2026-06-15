@@ -45,17 +45,17 @@ final class SGPlayerCompatibilitySession {
 
     func replace(with urlString: String) {
         guard let url = URL(string: urlString) else {
-            onPlaybackError?(String(localized: "The channel URL is invalid."))
+            reportPlaybackError(String(localized: "The channel URL is invalid."))
             return
         }
 
         guard loadedURL != url else { return }
         loadedURL = url
-        onPlaybackError?(nil)
+        reportPlaybackError(nil)
 
         let selector = NSSelectorFromString("replaceWithURL:")
         guard player.responds(to: selector) else {
-            onPlaybackError?(String(localized: "SGPlayer is not compatible with this build."))
+            reportPlaybackError(String(localized: "SGPlayer is not compatible with this build."))
             return
         }
 
@@ -63,7 +63,7 @@ final class SGPlayerCompatibilitySession {
         typealias ReplaceMessage = @convention(c) (AnyObject, Selector, NSURL) -> Bool
         let replace = unsafeBitCast(implementation, to: ReplaceMessage.self)
         if !replace(player, selector, url as NSURL) {
-            onPlaybackError?(String(localized: "SGPlayer could not open this channel."))
+            reportPlaybackError(String(localized: "SGPlayer could not open this channel."))
         }
     }
 
@@ -79,7 +79,7 @@ final class SGPlayerCompatibilitySession {
     }
 
     func play() {
-        onPlaybackError?(nil)
+        reportPlaybackError(nil)
         sendBooleanMessage("play")
     }
 
@@ -111,7 +111,13 @@ final class SGPlayerCompatibilitySession {
 
     private func reportCurrentErrorIfNeeded() {
         guard let error = objectMessage("error") as? NSError else { return }
-        onPlaybackError?(String(format: String(localized: "SGPlayer failed: %@"), error.localizedDescription))
+        reportPlaybackError(String(format: String(localized: "SGPlayer failed: %@"), error.localizedDescription))
+    }
+
+    private func reportPlaybackError(_ message: String?) {
+        DispatchQueue.main.async { [weak self] in
+            self?.onPlaybackError?(message)
+        }
     }
 
     @discardableResult
@@ -206,7 +212,9 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
 
         func attach(to view: NSView, urlString: String, onPlaybackError: @escaping (String?) -> Void) {
             guard let session else {
-                onPlaybackError(String(localized: "SGPlayer is not available in this build."))
+                DispatchQueue.main.async {
+                    onPlaybackError(String(localized: "SGPlayer is not available in this build."))
+                }
                 return
             }
 
@@ -275,7 +283,9 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
 
         func attach(to view: UIView, urlString: String, onPlaybackError: @escaping (String?) -> Void) {
             guard let session else {
-                onPlaybackError(String(localized: "SGPlayer is not available in this build."))
+                DispatchQueue.main.async {
+                    onPlaybackError(String(localized: "SGPlayer is not available in this build."))
+                }
                 return
             }
 
