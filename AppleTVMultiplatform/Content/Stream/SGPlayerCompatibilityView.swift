@@ -20,6 +20,7 @@ final class SGPlayerCompatibilitySession {
     private let player: NSObject
     private var loadedURL: URL?
     private var onPlaybackError: ((String?) -> Void)?
+    private var onPlaybackStateChange: ((Bool) -> Void)?
     private var observer: NSObjectProtocol?
 
     init?(urlString: String, onPlaybackError: ((String?) -> Void)? = nil) {
@@ -41,6 +42,11 @@ final class SGPlayerCompatibilitySession {
 
     func setPlaybackErrorHandler(_ handler: @escaping (String?) -> Void) {
         onPlaybackError = handler
+    }
+
+    func setPlaybackStateHandler(_ handler: @escaping (Bool) -> Void) {
+        onPlaybackStateChange = handler
+        reportPlaybackState()
     }
 
     func replace(with urlString: String) {
@@ -81,10 +87,26 @@ final class SGPlayerCompatibilitySession {
     func play() {
         reportPlaybackError(nil)
         sendBooleanMessage("play")
+        reportPlaybackState()
     }
 
     func pause() {
         sendBooleanMessage("pause")
+        reportPlaybackState()
+    }
+
+    var isPlaying: Bool {
+        boolMessage("wantsToPlay") ?? false
+    }
+
+    var volume: Double {
+        get {
+            doubleMessage("volume", on: audioRenderer()) ?? 1
+        }
+        set {
+            guard let audioRenderer = audioRenderer() else { return }
+            setDoubleMessage("setVolume:", value: min(max(newValue, 0), 1), on: audioRenderer)
+        }
     }
 
     private func observePlayerInfo() {
@@ -95,8 +117,13 @@ final class SGPlayerCompatibilitySession {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.reportCurrentErrorIfNeeded()
+                self?.reportPlaybackState()
             }
         }
+    }
+
+    private func audioRenderer() -> NSObject? {
+        objectMessage("audioRenderer") as? NSObject
     }
 
     private func renderer() -> NSObject? {
@@ -112,6 +139,13 @@ final class SGPlayerCompatibilitySession {
     private func reportCurrentErrorIfNeeded() {
         guard let error = objectMessage("error") as? NSError else { return }
         reportPlaybackError(String(format: String(localized: "SGPlayer failed: %@"), error.localizedDescription))
+    }
+
+    private func reportPlaybackState() {
+        let isPlaying = isPlaying
+        DispatchQueue.main.async { [weak self] in
+            self?.onPlaybackStateChange?(isPlaying)
+        }
     }
 
     private func reportPlaybackError(_ message: String?) {
@@ -131,6 +165,16 @@ final class SGPlayerCompatibilitySession {
         return message(player, selector)
     }
 
+    private func boolMessage(_ selectorName: String) -> Bool? {
+        let selector = NSSelectorFromString(selectorName)
+        guard player.responds(to: selector) else { return nil }
+
+        let implementation = player.method(for: selector)
+        typealias BooleanMessage = @convention(c) (AnyObject, Selector) -> Bool
+        let message = unsafeBitCast(implementation, to: BooleanMessage.self)
+        return message(player, selector)
+    }
+
     private func objectMessage(_ selectorName: String) -> AnyObject? {
         let selector = NSSelectorFromString(selectorName)
         guard player.responds(to: selector) else { return nil }
@@ -139,6 +183,26 @@ final class SGPlayerCompatibilitySession {
         typealias ObjectMessage = @convention(c) (AnyObject, Selector) -> AnyObject?
         let message = unsafeBitCast(implementation, to: ObjectMessage.self)
         return message(player, selector)
+    }
+
+    private func doubleMessage(_ selectorName: String, on object: NSObject?) -> Double? {
+        let selector = NSSelectorFromString(selectorName)
+        guard let object, object.responds(to: selector) else { return nil }
+
+        let implementation = object.method(for: selector)
+        typealias DoubleMessage = @convention(c) (AnyObject, Selector) -> Double
+        let message = unsafeBitCast(implementation, to: DoubleMessage.self)
+        return message(object, selector)
+    }
+
+    private func setDoubleMessage(_ selectorName: String, value: Double, on object: NSObject) {
+        let selector = NSSelectorFromString(selectorName)
+        guard object.responds(to: selector) else { return }
+
+        let implementation = object.method(for: selector)
+        typealias SetDoubleMessage = @convention(c) (AnyObject, Selector, Double) -> Void
+        let message = unsafeBitCast(implementation, to: SetDoubleMessage.self)
+        message(object, selector, value)
     }
 
     private func configureHostView(_ view: SGHostView) {

@@ -1,6 +1,6 @@
 {
   "description": "HiPlayer 是一款快速、私密且易于使用的 M3U 播放列表观看工具，可在 iPhone、iPad、Mac 和 Apple TV 上使用。只需添加播放列表 URL，即可在几秒内开始播放，无需账号，也无需注册。\n\n主要功能:\n- 支持 iOS、iPadOS、macOS 和 tvOS\n- 支持 M3U 和 M3U8 播放列表\n- 支持 EPG\n- 可通过 PIN 码保护播放列表，提升隐私性\n- 通过私有 iCloud 存储在多台设备间同步播放列表\n- 无需账号或注册\n- 可与其他设备共享播放列表\n- 界面简洁流畅，适合日常使用\n\n重要说明:\nHiPlayer 不提供、不托管、不销售，也不包含任何频道、媒体或播放列表。该应用仅播放用户添加的内容，您需自行确保自己拥有访问该内容的相应权利。\n",
-  "keywords": "iptv,m3u,m3u8,epg,播放列表,电视,播放器,直播,icloud",
-  "marketingUrl": "https://mikehouse.github.io/Apple-TV-Player",
-  "supportUrl": "https://mikehouse.github.io/Apple-TV-Player"
+  "keywords": "m3u8,epg,hls,ott,4k,uhd,hd,直播,tv,节目表,频道,体育,足球,赛事,高清,world,cup,2026,世界杯,视频,比赛,联赛,超清,指南,影音,节目",
+  "marketingUrl": "https://ohmyapps.com/products/hi-iptv-player/",
+  "supportUrl": "https://ohmyapps.com/products/hi-iptv-player/"
 }

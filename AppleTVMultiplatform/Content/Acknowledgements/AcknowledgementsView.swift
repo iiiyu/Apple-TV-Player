@@ -37,6 +37,11 @@ struct AcknowledgementsView: View {
             url: "https://github.com/kean/Nuke"
         ),
         .init(
+            name: "SGPlayer",
+            copyright: "Copyright (c) 2017 Single",
+            url: "https://github.com/libobjc/SGPlayer"
+        ),
+        .init(
             name: "SWCompression",
             copyright: "Copyright (c) 2024 Timofey Solomko",
             url: "https://github.com/tsolomko/SWCompression"

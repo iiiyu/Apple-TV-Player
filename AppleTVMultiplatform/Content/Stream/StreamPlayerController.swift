@@ -28,17 +28,29 @@ final class StreamPlayerController {
     private var terminalPlaybackError: String?
     private var lastObservedPlaybackTime: CMTime?
     private var lastPlaybackProgressDate = Date()
+    private var shouldPlayWhenReady: Bool
 
-    init(urlString: String, onPlaybackError: @escaping (String?) -> Void = { _ in }) {
+    init(
+        urlString: String,
+        autoplays: Bool = true,
+        onPlaybackError: @escaping (String?) -> Void = { _ in }
+    ) {
         self.onPlaybackError = onPlaybackError
         originalURL = URL(string: urlString)
         activeURL = originalURL
+        shouldPlayWhenReady = autoplays
         load()
 
         player.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
                 guard let self else { return }
+                guard shouldPlayWhenReady else {
+                    if status == .playing {
+                        player.pause()
+                    }
+                    return
+                }
                 if status == .playing {
                     consecutiveFailures = 0
                     clearPlaybackError()
@@ -130,12 +142,16 @@ final class StreamPlayerController {
             .store(in: &itemObservers)
 
         player.replaceCurrentItem(with: item)
-        player.play()
-        scheduleVideoStartupCheck(for: item, sourceURL: activeURL)
+        if shouldPlayWhenReady {
+            player.play()
+            scheduleVideoStartupCheck(for: item, sourceURL: activeURL)
+        } else {
+            player.pause()
+        }
     }
 
     private func scheduleRecovery(after error: Error?) {
-        guard terminalPlaybackError == nil else { return }
+        guard shouldPlayWhenReady, terminalPlaybackError == nil else { return }
         recoveryTask?.cancel()
         recoveryTask = nil
         if let error {
@@ -164,12 +180,13 @@ final class StreamPlayerController {
     }
 
     private func recoverAfterStall() {
+        guard shouldPlayWhenReady else { return }
         logger.info("Stream stalled", private: activeURL?.absoluteString ?? "")
         scheduleStallRecovery(trigger: "playback stalled notification", delay: Self.stallRecoveryDelay)
     }
 
     private func scheduleStallRecovery(trigger: String, delay: TimeInterval) {
-        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
+        guard shouldPlayWhenReady, recoveryTask == nil, terminalPlaybackError == nil else { return }
         recoveryTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled else { return }
@@ -179,7 +196,7 @@ final class StreamPlayerController {
     }
 
     private func recoverIfStillStuck(trigger: String) {
-        guard terminalPlaybackError == nil else { return }
+        guard shouldPlayWhenReady, terminalPlaybackError == nil else { return }
         guard let item = player.currentItem else { return }
 
         if let error = item.error {
@@ -209,7 +226,7 @@ final class StreamPlayerController {
     }
 
     private func recoverIfFailed() {
-        guard recoveryTask == nil, terminalPlaybackError == nil else { return }
+        guard shouldPlayWhenReady, recoveryTask == nil, terminalPlaybackError == nil else { return }
         guard let item = player.currentItem, item.status != .failed else {
             logger.info("Reloading failed stream on activation", private: activeURL?.absoluteString ?? "")
             consecutiveFailures = 0
@@ -219,6 +236,7 @@ final class StreamPlayerController {
     }
 
     func retry() {
+        shouldPlayWhenReady = true
         recoveryTask?.cancel()
         recoveryTask = nil
         videoStartupTask?.cancel()
@@ -231,6 +249,37 @@ final class StreamPlayerController {
         load()
     }
 
+    func play() {
+        shouldPlayWhenReady = true
+        resetPlaybackProgress()
+
+        guard terminalPlaybackError == nil else { return }
+        guard let item = player.currentItem else {
+            load()
+            return
+        }
+
+        if item.status == .failed {
+            consecutiveFailures = 0
+            load()
+            return
+        }
+
+        player.play()
+        if let activeURL {
+            scheduleVideoStartupCheck(for: item, sourceURL: activeURL)
+        }
+    }
+
+    func pause() {
+        shouldPlayWhenReady = false
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        videoStartupTask?.cancel()
+        videoStartupTask = nil
+        player.pause()
+    }
+
     func setPlaybackErrorHandler(_ handler: @escaping (String?) -> Void) {
         onPlaybackError = handler
         if let terminalPlaybackError {
@@ -239,7 +288,8 @@ final class StreamPlayerController {
     }
 
     private func switchToHLSFallback() -> Bool {
-        guard !didAttemptHLSFallback,
+        guard shouldPlayWhenReady,
+              !didAttemptHLSFallback,
               let originalURL,
               let fallbackURL = Self.hlsFallbackURL(for: originalURL),
               fallbackURL != activeURL else {
@@ -274,7 +324,8 @@ final class StreamPlayerController {
     }
 
     private func inspectVideoStartup(for item: AVPlayerItem, sourceURL: URL) async {
-        guard terminalPlaybackError == nil,
+        guard shouldPlayWhenReady,
+              terminalPlaybackError == nil,
               player.currentItem === item,
               player.timeControlStatus != .paused else {
             return
@@ -303,6 +354,7 @@ final class StreamPlayerController {
     }
 
     private func handleNewErrorLogEntry(from item: AVPlayerItem?) {
+        guard shouldPlayWhenReady else { return }
         guard let event = item?.errorLog()?.events.last else { return }
         let comment = event.errorComment ?? ""
         let domain = event.errorDomain
@@ -332,7 +384,7 @@ final class StreamPlayerController {
     }
 
     private func handlePeriodicPlaybackTime(_ time: CMTime) {
-        guard terminalPlaybackError == nil else { return }
+        guard shouldPlayWhenReady, terminalPlaybackError == nil else { return }
         guard player.currentItem != nil else {
             resetPlaybackProgress()
             return

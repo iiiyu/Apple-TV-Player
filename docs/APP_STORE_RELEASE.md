@@ -8,7 +8,7 @@ This project uses `asc` for App Store Connect release work. Fastlane is not used
 - Bundle ID: `com.ohmyapps.hiplayer`
 - SKU: `com.ohmyapps.hiplayer`
 - Version: `1.0`
-- Build: `3`
+- Build: `4`
 - Primary locale: `en-US`
 
 ## Local Metadata
