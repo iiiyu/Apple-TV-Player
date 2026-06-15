@@ -98,11 +98,13 @@ struct StreamView: View {
         .toolbar {
 #if !os(tvOS)
             ToolbarItem {
-                Button(useSGPlayerCompatibility ? "Use AVPlayer" : "Use SGPlayer", systemImage: "play.rectangle") {
+                Button(currentPlaybackEngineName, systemImage: currentPlaybackEngineSymbolName) {
                     togglePlaybackEngine()
                 }
                 .accessibilityIdentifier("stream-player-engine")
-                .help(useSGPlayerCompatibility ? "Switch playback to AVPlayer" : "Switch playback to SGPlayer")
+                .accessibilityLabel(Text("\(currentPlaybackEngineName) in use"))
+                .accessibilityHint(Text("Switch to \(targetPlaybackEngineName)"))
+                .help("Currently using \(currentPlaybackEngineName). Switch playback to \(targetPlaybackEngineName).")
             }
             ToolbarItem {
                 Button("Stream Info", systemImage: "info.circle") {
@@ -184,6 +186,19 @@ struct StreamView: View {
         }
 #endif
     }
+
+    private var currentPlaybackEngineName: String {
+        useSGPlayerCompatibility ? "SGPlayer" : "AVPlayer"
+    }
+
+    private var targetPlaybackEngineName: String {
+        useSGPlayerCompatibility ? "AVPlayer" : "SGPlayer"
+    }
+
+    private var currentPlaybackEngineSymbolName: String {
+        useSGPlayerCompatibility ? "cpu.fill" : "play.rectangle.fill"
+    }
+
 #if os(tvOS)
     private func headerView(now: Date) -> some View {
         HStack {
@@ -211,10 +226,6 @@ struct StreamView: View {
             .foregroundStyle(.secondary)
             .monospacedDigit()
         }
-    }
-
-    private var targetPlaybackEngineName: String {
-        useSGPlayerCompatibility ? "AVPlayer" : "SGPlayer"
     }
 
     private func tvOSPlaybackEngineButton() -> some View {
