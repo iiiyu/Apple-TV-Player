@@ -415,7 +415,9 @@ private struct MacOsPlayerView: NSViewRepresentable {
         let view = AVPlayerView()
         view.player = context.coordinator.controller.player
         view.showsFullScreenToggleButton = true
-        view.controlsStyle = .inline
+        // The inline controls instantiate AVKit's embedded volume slider, which
+        // can emit unsatisfiable constraints on current macOS SDKs.
+        view.controlsStyle = .minimal
         view.allowsPictureInPicturePlayback = true
         view.delegate = context.coordinator
         return view
