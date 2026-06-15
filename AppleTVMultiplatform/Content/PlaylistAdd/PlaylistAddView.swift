@@ -94,8 +94,8 @@ struct PlaylistAddView: View {
 
 #if os(tvOS)
         .padding(44)
-        .frame(minHeight: UIScreen.main.bounds.height * 0.85)
-        .frame(minWidth: UIScreen.main.bounds.width / 2.5)
+        .containerRelativeFrame(.vertical) { length, _ in length * 0.85 }
+        .containerRelativeFrame(.horizontal) { length, _ in length / 2.5 }
 #elseif os(macOS)
         .padding()
         .frame(minHeight: 344)

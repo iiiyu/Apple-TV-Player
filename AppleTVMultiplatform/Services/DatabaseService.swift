@@ -15,19 +15,22 @@ protocol DatabaseServiceInterface: AnyObject, Sendable {
 /// Other services should be `actor`s.
 final class DatabaseService: DatabaseServiceInterface {
 
+    private static let cloudKitContainerIdentifier = "iCloud.com.ohmyapps.hiplayer"
+
     private let sharedModelContainer: ModelContainer
-    @ObservationIgnored @Injected(\.logger) private var logger
     
     /// For tests use `isStoredInMemoryOnly = true`.
     /// 
     init(isStoredInMemoryOnly: Bool) {
-        let schema = Schema([PlaylistItem.self, AppSettings.self])
-        let cloudKitDatabase = ModelConfiguration.CloudKitDatabase.none
+        let logger = Container.shared.logger()
+        let schema = Schema([PlaylistItem.self, PlaylistSettingsItem.self, AppSettings.self])
+        let localDatabase = ModelConfiguration.CloudKitDatabase.none
+        let cloudKitDatabase = ModelConfiguration.CloudKitDatabase.private(Self.cloudKitContainerIdentifier)
         if isStoredInMemoryOnly {
             let modelConfiguration = ModelConfiguration(
                 schema: schema,
                 isStoredInMemoryOnly: isStoredInMemoryOnly,
-                cloudKitDatabase: cloudKitDatabase
+                cloudKitDatabase: localDatabase
             )
             do {
                 sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -37,6 +40,7 @@ final class DatabaseService: DatabaseServiceInterface {
             }
         } else {
             var modelConfiguration: ModelConfiguration?
+            var usesCloudKit = false
             #if DEBUG
             if let path = ProcessInfo.processInfo.arguments.first(where: {
                 $0.hasPrefix("DATABASE_PATH=")
@@ -47,10 +51,10 @@ final class DatabaseService: DatabaseServiceInterface {
             }) {
                 let url = URL(fileURLWithPath: path, isDirectory: false)
                 modelConfiguration = ModelConfiguration(
-                    schema: schema, url: url, allowsSave: false, cloudKitDatabase: cloudKitDatabase)
+                    schema: schema, url: url, allowsSave: false, cloudKitDatabase: localDatabase)
             } else if ProcessInfo.processInfo.arguments.contains("--in-memory-database-only") {
                 modelConfiguration = ModelConfiguration(
-                    schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: cloudKitDatabase)
+                    schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: localDatabase)
             }
             #endif
             if modelConfiguration == nil {
@@ -59,6 +63,7 @@ final class DatabaseService: DatabaseServiceInterface {
                     isStoredInMemoryOnly: isStoredInMemoryOnly,
                     cloudKitDatabase: cloudKitDatabase
                 )
+                usesCloudKit = true
             }
             guard let modelConfiguration else {
                 fatalError("Could not create ModelContainer.")
@@ -67,10 +72,20 @@ final class DatabaseService: DatabaseServiceInterface {
                 sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
                 logger.info("Database model container", private: modelConfiguration.url.path)
             } catch {
-                try? FileManager.default.removeItem(at: modelConfiguration.url)
+                guard usesCloudKit else {
+                    fatalError("Could not create ModelContainer: \(error)")
+                }
+
+                logger.error(error)
+                logger.info("CloudKit model container unavailable. Falling back to local SwiftData store.")
+                let localModelConfiguration = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: isStoredInMemoryOnly,
+                    cloudKitDatabase: localDatabase
+                )
                 do {
-                    sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
-                    logger.error(error)
+                    sharedModelContainer = try ModelContainer(for: schema, configurations: [localModelConfiguration])
+                    logger.info("Database model container", private: localModelConfiguration.url.path)
                 } catch {
                     fatalError("Could not create ModelContainer: \(error)")
                 }

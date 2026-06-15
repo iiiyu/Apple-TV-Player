@@ -229,27 +229,27 @@ private extension PlaylistAddServiceTests {
     static let pin = "1234"
 
     static let playlistWithImageURL = """
-#EXTM3U url-img="http://tvguide.sibset.en/channels/borpas_icons.zip"
+#EXTM3U url-img="https://example.com/icons/borpas-icons.zip"
 #EXTINF:-1 tvg-name="9104" tvg-logo="9104",Первый канал
-http://94.hlstv.nsk.211.en/239.211.0.1.m3u8
+https://example.tv/streams/channel-1.m3u8
 """
 
     static let playlistWithStreamLogo = """
 #EXTM3U
-#EXTINF:-1 tvg-id="1HDMusicTelevision.ru" tvg-logo="https://i.imgur.com/6TjLUuF.png",1HD Music Television
-https://sc.id-tv.kz/1hd.m3u8
+#EXTINF:-1 tvg-id="1HDMusicTelevision.ru" tvg-logo="https://example.com/logos/music.png",1HD Music Television
+https://example.tv/streams/music.m3u8
 """
 
     static let playlistWithXTvgAndImageURLAndTvgLogo = """
 #EXTM3U x-tvg-url="https://existing.example/program-guide.xml" url-img="https://existing.example/icon.zip" tvg-logo="https://existing.example/playlist-logo.png"
-#EXTINF:-1 tvg-id="1HDMusicTelevision.ru" tvg-logo="https://i.imgur.com/6TjLUuF.png",1HD Music Television
-https://sc.id-tv.kz/1hd.m3u8
+#EXTINF:-1 tvg-id="1HDMusicTelevision.ru" tvg-logo="https://example.com/logos/music.png",1HD Music Television
+https://example.tv/streams/music.m3u8
 """
 
     static let playlistWithHeaderLogo = """
 #EXTM3U tvg-logo="https://existing.example/playlist-logo.png"
-#EXTINF:-1 tvg-id="1HDMusicTelevision.ru" tvg-logo="https://i.imgur.com/6TjLUuF.png",1HD Music Television
-https://sc.id-tv.kz/1hd.m3u8
+#EXTINF:-1 tvg-id="1HDMusicTelevision.ru" tvg-logo="https://example.com/logos/music.png",1HD Music Television
+https://example.tv/streams/music.m3u8
 """
 
     func makePlaylistFile(named name: String, contents: String) throws -> URL {

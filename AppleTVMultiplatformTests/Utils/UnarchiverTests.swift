@@ -26,7 +26,7 @@ struct UnarchiverTests {
         let content = try String(contentsOf: extractedURL, encoding: .utf8)
         #expect(content.hasPrefix("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"))
         #expect(content.contains("<tv "))
-        
+
         let expectedSteps: [Unarchiver.Progress] = [.start, .unarchiving, .complete]
         receiveSteps.withLock({
             #expect(expectedSteps == $0)
@@ -50,9 +50,9 @@ struct UnarchiverTests {
         #expect(content.hasPrefix("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"))
         #expect(content.contains("<tv "))
     }
-    
+
     @Test func unarchivesNotExistedRemoteArchive() async throws {
-        let archivePath = "https://google.com/archive.zip"
+        let archivePath = "https://example.com/archive.zip"
         let receiveSteps = OSAllocatedUnfairLock(initialState: [Unarchiver.Progress]())
         let foundSteps = OSAllocatedUnfairLock(initialState: [Unarchiver.Progress]())
         await #expect(throws: Error.self) {

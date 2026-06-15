@@ -17,7 +17,7 @@ struct ProgramGuideParserTests {
         }).parse(xmlURL: xmlURL)
 
         #expect(guides == expectedGuides)
-        
+
         receiveSteps.withLock({
             #expect([.start, .parsing, .complete] == $0)
         })
@@ -57,7 +57,7 @@ struct ProgramGuideParserTests {
             #expect([.start, .unarchiving, .parsing, .complete] == $0)
         })
     }
-    
+
     @Test func parsesProgramGuideRemoteURLArchive() async throws {
         let receiveSteps = OSAllocatedUnfairLock(initialState: [ProgramGuideParser.Progress]())
         let foundSteps = OSAllocatedUnfairLock(initialState: [ProgramGuideParser.Progress]())
@@ -65,7 +65,7 @@ struct ProgramGuideParserTests {
             _ = try await ProgramGuideParser(onProgress: { steps, step, _ in
                 receiveSteps.withLock { $0 = steps }
                 foundSteps.withLock({ $0.append(step) })
-            }).parse(archiveURL: URL(string: "https://google.com/archive.zip")!)
+            }).parse(archiveURL: URL(string: "https://example.com/archive.zip")!)
         }
         receiveSteps.withLock({
             #expect([.start, .downloading, .unarchiving, .parsing, .complete] == $0)
@@ -81,7 +81,7 @@ struct ProgramGuideParserTests {
                 channel: .init(
                     id: "673247127d5da5000817b4d6",
                     displayName: "Pluto TV Trending Now",
-                    iconURL: "https://images.pluto.tv/channels/673247127d5da5000817b4d6/colorLogoPNG_1732662634386.png"
+                    iconURL: "https://example.com/logos/pluto-trending.png"
                 ),
                 programs: [
                     .init(
@@ -100,7 +100,7 @@ struct ProgramGuideParserTests {
                 channel: .init(
                     id: "5ba3fb9c4b078e0f37ad34e8",
                     displayName: "Pluto TV Spotlight",
-                    iconURL: "https://images.pluto.tv/channels/5ba3fb9c4b078e0f37ad34e8/colorLogoPNG.png"
+                    iconURL: "https://example.com/logos/pluto-spotlight.png"
                 ),
                 programs: [
                     .init(

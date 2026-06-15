@@ -57,18 +57,18 @@ HiPlayer does not provide, host, sell, or include any channels, media, or playli
 - Xcode 26.5+
 - Swift 6.2+
 - SwiftPM
-- Ruby 3+ (`fastlane`)
+- `asc` CLI for App Store Connect release work
 - For now there is no CI/CD pipeline
 
-```bash
-bundle install
-```
+## Local Binary Dependencies
+
+HiPlayer can use SGPlayer as the preferred playback engine with AVPlayer as a fallback. The compiled SGPlayer frameworks are local binary artifacts and are not committed to this repository because they are too large for normal GitHub storage. See [vendor/README.md](vendor/README.md) for the expected local framework paths.
 
 ## App Signing
 
-- Project is set for manual signing (you need to change it if you build for your own real device)
-- Build for simulators you do not need to sign the app
-- fastlane uses signing identities from `./.secrets/` directory (not committed to git)
+- The app target uses automatic signing for `com.ohmyapps.hiplayer`
+- Build for simulators does not require signing
+- App Store Connect release automation is documented in [docs/APP_STORE_RELEASE.md](docs/APP_STORE_RELEASE.md)
 
 ## Build from Xcode
 
@@ -80,9 +80,9 @@ bundle install
 
 ## Unit Testing
 
-- iOS `bundle exec fastlane ios run_unit_tests` requires iOS 26.5 Simulator Runtime
-- tvOS `bundle exec fastlane tvos run_unit_tests` requires tvOS 26.5 Simulator Runtime
-- macOS `bundle exec fastlane mac run_unit_tests` runs on current machine
+- iOS: `./scripts/tests/run-unit-tests-iphone.sh` requires iOS 26.5 Simulator Runtime
+- tvOS: `./scripts/tests/run-unit-tests-appletv.sh` requires tvOS 26.5 Simulator Runtime
+- macOS: `./scripts/tests/run-unit-tests-macos.sh` runs on the current machine
 
 ## UI Testing
 
@@ -94,55 +94,51 @@ Before any UI Tests must run a python local server that will provide mock data t
 
 ### iOS
 
-- iOS iPhone `bundle exec fastlane ios run_ui_snapshots_tests_iphone_26` requires iOS 26.5 Simulator Runtime
-- iOS iPad `bundle exec fastlane ios run_ui_snapshots_tests_ipad_26` requires iOS 26.5 Simulator Runtime
-- iOS iPhone `bundle exec fastlane ios run_ui_snapshots_tests_iphone_18` requires iOS 18.6 Simulator Runtime
-- iOS iPad `bundle exec fastlane ios run_ui_snapshots_tests_ipad_18` requires iOS 18.6 Simulator Runtime
+- iPhone iOS 26: `./scripts/tests/run-ui-snapshots-tests-iphone-26.sh`
+- iPad iOS 26: `./scripts/tests/run-ui-snapshots-tests-ipad-26.sh`
+- iPhone iOS 18: `./scripts/tests/run-ui-snapshots-tests-iphone-18.sh`
+- iPad iOS 18: `./scripts/tests/run-ui-snapshots-tests-ipad-18.sh`
 
 ### tvOS
 
-- tvOS `bundle exec fastlane tvos run_ui_snapshots_tests_appletv_26` requires tvOS 26.5 Simulator Runtime
-- tvOS `bundle exec fastlane tvos run_ui_snapshots_tests_appletv_18` requires tvOS 18.5 Simulator Runtime
+- tvOS 26: `./scripts/tests/run-ui-snapshots-tests-appletv-26.sh`
+- tvOS 18: `./scripts/tests/run-ui-snapshots-tests-appletv-18.sh`
 
 ### macOS
 
 Screenshots in repo created on macOS 26.5 with macOS SDK 26.5
 
 ```bash
-bundle exec fastlane mac run_ui_snapshots_tests_macos
+./scripts/tests/run-ui-snapshots-tests-macos.sh
 ```
 
-## App Store Connect Distribution
+## App Store Connect Distribution With `asc`
 
-1. Upload the app to testflight
-2. Add that build to the distribution group to send to review
+See [ASC.md](ASC.md) for the generated command reference and [docs/APP_STORE_RELEASE.md](docs/APP_STORE_RELEASE.md) for this app's release checklist.
 
-- iOS `bundle exec fastlane ios make_testflight_release`
-- tvOS `bundle exec fastlane tvos make_testflight_release`
-- macOS `bundle exec fastlane mac make_testflight_release`
-
-## App Store Connect Snapshots and Metadata
-
-### Regenerate snapshots for App Store Connect when the UI changes significantly
+### Regenerate raw snapshots when the UI changes significantly
 
 Must use the latest Simulator Runtime, now it is 26.4
 
-- iOS iPhone `bundle exec fastlane ios make_app_store_snapshots_iphone_26_4` requires iOS 26.4 Simulator Runtime
-- iOS iPad `bundle exec fastlane ios make_app_store_snapshots_ipad_26_4` requires iOS 26.4 Simulator Runtime
-- tvOS `bundle exec fastlane tvos make_app_store_snapshots_appletv_26_4` requires tvOS 26.4 Simulator Runtime
-- macOS `bundle exec fastlane tvos make_app_store_snapshots_macos` requires macOS SDK 26.4 Simulator Runtime and macOS 26 machine
+- iPhone: `./scripts/tests/make-app-store-snapshots-iphone-26_4.sh`
+- iPad: `./scripts/tests/make-app-store-snapshots-ipad-26_4.sh`
+- tvOS: `./scripts/tests/make-app-store-snapshots-appletv-26_4.sh`
+- macOS: `./scripts/tests/make-app-store-snapshots-macos.sh`
 
-### Upload snapshots to App Store Connect of new made or updated
+### Prepare App Store screenshots and metadata
 
-- iOS `bundle exec fastlane ios upload_appstore_screenshots`
-- tvOS `bundle exec fastlane tvos upload_appstore_screenshots`
-- macOS `bundle exec fastlane mac upload_appstore_screenshots`
+```bash
+./scripts/appstore/prepare-screenshots.py
+asc metadata validate --dir ./metadata --output table
+```
 
-### If you changed metadata (description, keywords, etc.) upload it to App Store Connect
+### Validate App Store Connect readiness
 
-- iOS `bundle exec fastlane ios upload_appstore_metadata`
-- tvOS `bundle exec fastlane tvos upload_appstore_metadata`
-- macOS `bundle exec fastlane mac upload_appstore_metadata`
+```bash
+asc validate --app 6780068053 --version 1.0 --platform IOS --output table
+asc validate --app 6780068053 --version 1.0 --platform MAC_OS --output table
+asc validate --app 6780068053 --version 1.0 --platform TV_OS --output table
+```
 
 ----
 

@@ -1,0 +1,6 @@
+{
+  "description": "HiPlayer è un modo veloce, riservato e piacevolmente semplice per guardare playlist M3U su iPhone, iPad, Mac e Apple TV. Basta aggiungere l'URL di una playlist e iniziare a guardare in pochi secondi, senza account e senza registrazione.\n\nFunzionalità principali:\n- Funziona su iOS, iPadOS, macOS e tvOS\n- Supporta playlist M3U e M3U8\n- Supporta EPG\n- Protegge le playlist con un PIN per una maggiore privacy\n- Sincronizza le playlist tra dispositivi con l'archiviazione iCloud privata\n- Non richiede account né registrazione\n- Consente di condividere playlist con altri dispositivi\n- Interfaccia veloce e chiara per l'uso quotidiano\n\nImportante:\nHiPlayer non fornisce, non ospita, non vende e non include canali, contenuti multimediali o playlist. L'app riproduce solo i contenuti aggiunti dall'utente e sei responsabile di disporre dei diritti necessari per accedere a tali contenuti.\n",
+  "keywords": "iptv,m3u,m3u8,epg,playlist,player,tv,stream,icloud",
+  "marketingUrl": "https://mikehouse.github.io/Apple-TV-Player",
+  "supportUrl": "https://mikehouse.github.io/Apple-TV-Player"
+}

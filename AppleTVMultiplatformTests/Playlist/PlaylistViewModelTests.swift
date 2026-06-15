@@ -7,7 +7,7 @@ import SwiftData
 
 @Suite(.container)
 struct PlaylistViewModelTests {
-    
+
     @Test func titleCoding() async throws {
         let viewModel = PlaylistViewModel(content: makeContent())
         let titles: [String] = [
@@ -29,12 +29,12 @@ struct PlaylistViewModelTests {
             #expect(title == decrypted)
         }
     }
-    
+
     @Test func readIconFromDifferenctSources() async throws {
         let service = MockPlaylistService(
             result: .failure(NSError(domain: "", code: 0)),
             programGuide: .init(
-                channel: .init(id: "1", displayName: "1", iconURL: "https://guide.com/icon"),
+                channel: .init(id: "1", displayName: "1", iconURL: "https://example.com/guide-icon.png"),
                 programs: []
             )
         )
@@ -44,13 +44,13 @@ struct PlaylistViewModelTests {
             title: "", url: "", tvgLogo: nil,
             tvgID: nil, tvgName: nil, groupTitle: nil)
         )
-        #expect(icon == "https://guide.com/icon")
-        
+        #expect(icon == "https://example.com/guide-icon.png")
+
         icon = await viewModel.iconURL(for: .init(
-            title: "", url: "", tvgLogo: "https://stream.com/icon",
+            title: "", url: "", tvgLogo: "https://example.com/stream-icon.png",
             tvgID: nil, tvgName: nil, groupTitle: nil)
         )
-        #expect(icon == "https://stream.com/icon")
+        #expect(icon == "https://example.com/stream-icon.png")
     }
 
     @Test func loadStreamsUsesFirstPlaylistFromService() async throws {
@@ -105,7 +105,7 @@ struct PlaylistViewModelTests {
         #expect(service.requestedReloadProgramGuide == false)
         #expect(viewModel.streams == [firstPlaylist.streams])
     }
-    
+
     @Test func loadStreamsDoesReloadGuidesWhenEmpty() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(
@@ -170,7 +170,7 @@ struct PlaylistViewModelTests {
             ) == "Fallback"
         )
     }
-    
+
     @Test func filteredStreamsMatchesTitleTvgNameAndGroupCaseInsensitively() async throws {
         let playlist = makePlaylist(
             streams: [
@@ -508,7 +508,7 @@ struct PlaylistViewModelTests {
                 )
             ]
         )
-        
+
         let database = DatabaseService(isStoredInMemoryOnly: true)
         let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.none.rawValue)
         let item = PlaylistItem(
@@ -519,7 +519,7 @@ struct PlaylistViewModelTests {
         database.mainContext.insert(item)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
-        
+
         let service = MockPlaylistService(result: .success([playlist]))
         Container.shared.playlistService.register { service }
         let viewModel = PlaylistViewModel(content: expectedContent)
@@ -568,7 +568,7 @@ struct PlaylistViewModelTests {
             ]
         ])
     }
-    
+
     @Test func streamsAscOrder() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(
@@ -599,7 +599,7 @@ struct PlaylistViewModelTests {
                 )
             ]
         )
-        
+
         let database = DatabaseService(isStoredInMemoryOnly: true)
         let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.ascending.rawValue)
         let item = PlaylistItem(
@@ -610,7 +610,7 @@ struct PlaylistViewModelTests {
         database.mainContext.insert(item)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
-        
+
         let service = MockPlaylistService(result: .success([playlist]))
         Container.shared.playlistService.register { service }
         let viewModel = PlaylistViewModel(content: expectedContent)
@@ -645,7 +645,7 @@ struct PlaylistViewModelTests {
             )
         ]])
     }
-    
+
     @Test func streamsDescOrder() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(
@@ -676,7 +676,7 @@ struct PlaylistViewModelTests {
                 )
             ]
         )
-        
+
         let database = DatabaseService(isStoredInMemoryOnly: true)
         let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.descending.rawValue)
         let item = PlaylistItem(
@@ -687,7 +687,7 @@ struct PlaylistViewModelTests {
         database.mainContext.insert(item)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
-        
+
         let service = MockPlaylistService(result: .success([playlist]))
         Container.shared.playlistService.register { service }
         let viewModel = PlaylistViewModel(content: expectedContent)
@@ -722,9 +722,9 @@ struct PlaylistViewModelTests {
             )
         ]])
     }
-    
+
     @Test func streamsRecentOrder() async throws {
-        let expectedContent = makeContent(url: "http://playlist.me")
+        let expectedContent = makeContent(url: "https://example.com/playlist.m3u")
         let playlist = makePlaylist(
             streams: [
                 .init(
@@ -769,7 +769,7 @@ struct PlaylistViewModelTests {
                 )
             ]
         )
-        
+
         let database = DatabaseService(isStoredInMemoryOnly: true)
         let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.recentViewed.rawValue)
         let item = PlaylistItem(
@@ -780,7 +780,7 @@ struct PlaylistViewModelTests {
         database.mainContext.insert(item)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
-        
+
         let service = MockPlaylistService(result: .success([playlist]))
         Container.shared.playlistService.register { service }
         let viewModel = PlaylistViewModel(content: expectedContent)
@@ -789,7 +789,7 @@ struct PlaylistViewModelTests {
         viewModel.selectedStream(playlist.streams[4])
 
         await viewModel.loadStreams()
-        
+
         let expectedStreams: [[PlaylistParser.Stream]] = [[
             .init(
                 title: "Cd",
@@ -835,17 +835,17 @@ struct PlaylistViewModelTests {
 
         #expect(service.requestedContent == expectedContent)
         #expect(viewModel.streams == expectedStreams)
-        
+
         item.encrypted = true
         item.salt = Crypto.generateSalt()
-        
+
         try database.mainContext.save()
-        
+
         await viewModel.loadStreams()
-        
+
         #expect(viewModel.streams == expectedStreams)
     }
-    
+
     @Test func streamsMostOrder() async throws {
         let expectedContent = makeContent()
         let playlist = makePlaylist(
@@ -892,7 +892,7 @@ struct PlaylistViewModelTests {
                 )
             ]
         )
-        
+
         let database = DatabaseService(isStoredInMemoryOnly: true)
         let settings = PlaylistSettingsItem(order: PlaylistSettingsItem.StreamListOrder.mostViewed.rawValue)
         let item = PlaylistItem(
@@ -903,16 +903,16 @@ struct PlaylistViewModelTests {
         database.mainContext.insert(item)
         try database.mainContext.save()
         Container.shared.databaseService.register { database }
-        
+
         let service = MockPlaylistService(result: .success([playlist]))
         Container.shared.playlistService.register { service }
         let viewModel = PlaylistViewModel(content: expectedContent)
         viewModel.selectedStream(playlist.streams[1])
         try await Task.sleep(for: .milliseconds(1))
         viewModel.selectedStream(playlist.streams[0])
-        
+
         try database.mainContext.save()
-        
+
         let now = Date()
         #expect(item.settings?.views.count == 2)
         #expect(item.settings?.views["1tTtE3mj+o1VCjd5RC5GQExUo9Rl0OCGvlyMbeGPNiA="] == 1)
@@ -921,12 +921,12 @@ struct PlaylistViewModelTests {
             item.settings?.recent["+qGOTX85xIA8FhUXdnL0agBCYzFs/hKxp2lxYcmGKiI="] ?? now >
             item.settings?.recent["1tTtE3mj+o1VCjd5RC5GQExUo9Rl0OCGvlyMbeGPNiA="] ?? now)
         #expect(item.settings?.encrypted.count == 2)
-        
+
         try await Task.sleep(for: .milliseconds(1))
         viewModel.selectedStream(playlist.streams[1])
-        
+
         try database.mainContext.save()
-        
+
         #expect(item.settings?.views.count == 2)
         #expect(item.settings?.views["+qGOTX85xIA8FhUXdnL0agBCYzFs/hKxp2lxYcmGKiI="] == 1)
         #expect(item.settings?.views["1tTtE3mj+o1VCjd5RC5GQExUo9Rl0OCGvlyMbeGPNiA="] == 2)
@@ -980,17 +980,17 @@ struct PlaylistViewModelTests {
                 groupTitle: nil
             )
         ]]
-        
+
         #expect(service.requestedContent == expectedContent)
         #expect(viewModel.streams == expectedStreams)
-        
+
         item.encrypted = true
         item.salt = Crypto.generateSalt()
-        
+
         try database.mainContext.save()
-        
+
         await viewModel.loadStreams()
-        
+
         #expect(viewModel.streams == expectedStreams)
     }
 }
@@ -1072,7 +1072,7 @@ private final class MockPlaylistService: PlaylistServiceInterface, @unchecked Se
 
     func clearCache(for content: PlaylistItem.Content) async {
     }
-    
+
     func programGuides(for content: PlaylistItem.Content, since: Date) async -> [ProgramGuide] {
         programGuide.map({ [$0] }).flatMap({ $0 }) ?? []
     }

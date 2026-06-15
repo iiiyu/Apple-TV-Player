@@ -11,3 +11,23 @@ fastlane/coverage
 fastlane/test_output
 scripts/tests/__pycache__/server.cpython-314.pyc
 .secrets
+
+# Local App Store Connect/export artifacts. These can include signed apps,
+# embedded provisioning profiles, dSYMs, upload logs, and generated IPAs.
+.asc/
+
+# Generated App Store screenshot output. Recreate with
+# scripts/appstore/prepare-screenshots.py when needed.
+AppStoreAssets/
+
+# Local binary player frameworks are too large for normal GitHub storage.
+# See vendor/README.md for setup notes.
+vendor/SGPlayer/
+
+# SQLite runtime sidecars generated beside test fixture stores.
+*.store-shm
+*.store-wal
+
+# Local secrets and environment files.
+.env
+.env.*

@@ -80,68 +80,70 @@ struct ContentView: View {
     }
 #if os(tvOS)
     private func contentView() -> some View {
-        NavigationStack(path: $viewModel.path) {
-            VStack {
-                PlaylistsView(
-                    selectedPlaylist: $viewModel.selectedPlaylist
-                )
-                .frame(width: UIScreen.main.bounds.width / 2)
-
-                HStack {
-                    AddButtonView(isToolbar: false) {
-                        viewModel.onAddPlaylist()
-                    }
-                    Button("", systemImage: "info.circle") {
-                        showAcknowledgements = true
-                    }
-                    .accessibilityIdentifier("acknowledgements")
-                }
-            }
-            .id(viewModel.playlistListUpdate)
-            .navigationDestination(for: PlaylistItem.Content.self) { content in
-                HStack(spacing: 0) {
-                    PlaylistView(
-                        content: content,
-                        selectedStream: $viewModel.selectedPlaylistStream,
-                        focusedStream: $focusedStream,
-                        reselectStream: $reselectStream,
-                        reloadCurrentProgram: $reloadCurrentProgram,
-                        restoreStreamHmac: { viewModel.consumeRestoreStreamHmac() }
+        GeometryReader { geometry in
+            NavigationStack(path: $viewModel.path) {
+                VStack {
+                    PlaylistsView(
+                        selectedPlaylist: $viewModel.selectedPlaylist
                     )
-                    .frame(width: UIScreen.main.bounds.width / 2.8)
-                    .padding(32)
-                    .ignoresSafeArea()
-                    .onAppear {
-                        UIApplication.shared.isIdleTimerDisabled = true
-                    }
-                    .onDisappear {
-                        UIApplication.shared.isIdleTimerDisabled = false
-                    }
+                    .frame(width: geometry.size.width / 2)
 
-                    if let stream = viewModel.selectedPlaylistStream {
-                        StreamView(
-                            content: content,
-                            stream: stream,
-                            reselectStream: $reselectStream,
-                            focusedStream: $focusedStream,
-                            reloadCurrentProgram: $reloadCurrentProgram
-                        )
-                        .id(stream)
-                        .padding([.top], 32)
-                        .ignoresSafeArea()
-                    } else {
-                        ContentUnavailableView(
-                            "Select a channel",
-                            systemImage: "play.tv",
-                            description: Text("Choose a channel from the list to start watching.")
-                        )
-                        .frame(maxWidth: .infinity)
+                    HStack {
+                        AddButtonView(isToolbar: false) {
+                            viewModel.onAddPlaylist()
+                        }
+                        Button("", systemImage: "info.circle") {
+                            showAcknowledgements = true
+                        }
+                        .accessibilityIdentifier("acknowledgements")
                     }
                 }
-                .id(content.id)
-                .ignoresSafeArea()
-                .onDisappear {
-                    viewModel.selectedPlaylist = nil
+                .id(viewModel.playlistListUpdate)
+                .navigationDestination(for: PlaylistItem.Content.self) { content in
+                    HStack(spacing: 0) {
+                        PlaylistView(
+                            content: content,
+                            selectedStream: $viewModel.selectedPlaylistStream,
+                            focusedStream: $focusedStream,
+                            reselectStream: $reselectStream,
+                            reloadCurrentProgram: $reloadCurrentProgram,
+                            restoreStreamHmac: { viewModel.consumeRestoreStreamHmac() }
+                        )
+                        .frame(width: geometry.size.width / 2.8)
+                        .padding(32)
+                        .ignoresSafeArea()
+                        .onAppear {
+                            UIApplication.shared.isIdleTimerDisabled = true
+                        }
+                        .onDisappear {
+                            UIApplication.shared.isIdleTimerDisabled = false
+                        }
+
+                        if let stream = viewModel.selectedPlaylistStream {
+                            StreamView(
+                                content: content,
+                                stream: stream,
+                                reselectStream: $reselectStream,
+                                focusedStream: $focusedStream,
+                                reloadCurrentProgram: $reloadCurrentProgram
+                            )
+                            .id(stream)
+                            .padding([.top], 32)
+                            .ignoresSafeArea()
+                        } else {
+                            ContentUnavailableView(
+                                "Select a channel",
+                                systemImage: "play.tv",
+                                description: Text("Choose a channel from the list to start watching.")
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .id(content.id)
+                    .ignoresSafeArea()
+                    .onDisappear {
+                        viewModel.selectedPlaylist = nil
+                    }
                 }
             }
         }

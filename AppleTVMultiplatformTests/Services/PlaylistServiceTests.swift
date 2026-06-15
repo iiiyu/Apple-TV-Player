@@ -33,7 +33,7 @@ struct PlaylistServiceTests {
         #expect(resolvedGuide == expectedGuides.first)
         #expect(try cachedXMLFiles(in: cacheDirectoryURL).count == 1)
     }
-    
+
     @Test func programGuidesFilteredByDate() async throws {
         let cacheDirectoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: cacheDirectoryURL) }
@@ -57,7 +57,7 @@ struct PlaylistServiceTests {
         let sinceNowGuides = await service.programGuides(for: content, since: Date())
         #expect(sinceNowGuides.isEmpty)
     }
-    
+
     @Test func programGuideSearchByNameAndSuffix() async throws {
         let cacheDirectoryURL = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: cacheDirectoryURL) }
@@ -76,16 +76,16 @@ struct PlaylistServiceTests {
         let _ = try await service.playlists(for: content, reloadProgramGuide: false)
         var stream = PlaylistParser.Stream(
             title: "Pluto TV Trending Now",
-            url: "https://stitcher.pluto.tv/stitch/hls/channel/673247127d5da5000817b4d6/master.m3u8",
+            url: "https://example.tv/streams/pluto-trending.m3u8",
             tvgLogo: nil, tvgID: nil, tvgName: nil, groupTitle: nil
         )
         var guide = await service.programGuide(for: content, stream: stream)
         #expect(guide?.channel.id == "673247127d5da5000817b4d6")
         #expect(guide?.channel.displayName == "Pluto TV Trending Now")
-        
+
         stream = PlaylistParser.Stream(
             title: "Pluto TV Trending",
-            url: "https://stitcher.pluto.tv/stitch/hls/channel/673247127d5da5000817b4d6/master.m3u8",
+            url: "https://example.tv/streams/pluto-trending.m3u8",
             tvgLogo: nil, tvgID: nil, tvgName: nil, groupTitle: nil
         )
         guide = await service.programGuide(for: content, stream: stream)
@@ -403,8 +403,8 @@ private extension PlaylistServiceTests {
         """
         #EXTM3U url-tvg="\(programGuideURL.absoluteString)"
 
-        #EXTINF:-1 tvg-id="5ba3fb9c4b078e0f37ad34e8" tvg-name="Pluto TV Spotlight" tvg-logo="https://images.pluto.tv/channels/5ba3fb9c4b078e0f37ad34e8/colorLogoPNG.png" group-title="Movies" tvg-chno="10", Pluto TV Spotlight
-        https://stitcher.pluto.tv/stitch/hls/channel/5ba3fb9c4b078e0f37ad34e8/master.m3u8
+        #EXTINF:-1 tvg-id="5ba3fb9c4b078e0f37ad34e8" tvg-name="Pluto TV Spotlight" tvg-logo="https://example.com/logos/pluto-spotlight.png" group-title="Movies" tvg-chno="10", Pluto TV Spotlight
+        https://example.tv/streams/pluto-spotlight.m3u8
         """
     }
 
@@ -418,7 +418,7 @@ private extension PlaylistServiceTests {
         #EXTM3U url-img="\(imageArchiveURL.absoluteString)"
 
         #EXTINF:-1 tvg-name="\(tvgName)" tvg-logo="\(tvgLogo)",\(title)
-        http://94.hlstv.nsk.211.en/239.211.0.1.m3u8
+        https://example.tv/streams/channel-1.m3u8
         """
     }
 

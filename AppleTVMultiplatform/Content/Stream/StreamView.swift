@@ -794,19 +794,21 @@ struct StreamViewPreviews: PreviewProvider {
         )
         .frame(width: 600, height: 460)
 #else
-        HStack {
-            Rectangle()
-                .fill(.clear)
-                .frame(width: UIScreen.main.bounds.width / 4)
-                
-            StreamView(
-                content: content,
-                stream: stream,
-                reselectStream: .constant(false),
-                focusedStream: .constant(nil),
-                reloadCurrentProgram: .constant(.init())
-            )
-            .background(Color(uiColor: .darkGray))
+        GeometryReader { geometry in
+            HStack {
+                Rectangle()
+                    .fill(.clear)
+                    .frame(width: geometry.size.width / 4)
+
+                StreamView(
+                    content: content,
+                    stream: stream,
+                    reselectStream: .constant(false),
+                    focusedStream: .constant(nil),
+                    reloadCurrentProgram: .constant(.init())
+                )
+                .background(Color(uiColor: .darkGray))
+            }
         }
 #endif
     }

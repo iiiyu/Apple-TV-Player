@@ -1,0 +1,6 @@
+{
+  "description": "HiPlayer là cách nhanh, riêng tư và dễ dùng để xem danh sách phát M3U trên iPhone, iPad, Mac và Apple TV. Chỉ cần thêm URL danh sách phát và bắt đầu xem trong vài giây, không cần tài khoản, không cần đăng ký.\n\nTính năng chính:\n- Hoạt động trên iOS, iPadOS, macOS và tvOS\n- Hỗ trợ danh sách phát M3U và M3U8\n- Hỗ trợ EPG\n- Bảo vệ danh sách phát bằng mã PIN để tăng thêm quyền riêng tư\n- Đồng bộ danh sách phát giữa các thiết bị bằng iCloud riêng tư\n- Không cần tài khoản hoặc đăng ký\n- Cho phép chia sẻ danh sách phát với các thiết bị khác\n- Giao diện nhanh, rõ ràng cho việc sử dụng hằng ngày\n\nQuan trọng:\nHiPlayer không cung cấp, lưu trữ, bán hoặc bao gồm bất kỳ kênh, nội dung media hay danh sách phát nào. Ứng dụng chỉ phát nội dung do người dùng thêm vào, và bạn chịu trách nhiệm bảo đảm mình có quyền truy cập nội dung đó.\n",
+  "keywords": "iptv,m3u,m3u8,epg,danh sách,tv,phát,icloud",
+  "marketingUrl": "https://mikehouse.github.io/Apple-TV-Player",
+  "supportUrl": "https://mikehouse.github.io/Apple-TV-Player"
+}

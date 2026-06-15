@@ -182,8 +182,8 @@ struct PlaylistSettingsView: View {
         .listStyle(.insetGrouped)
 #elseif os(tvOS)
         .padding(44)
-        .frame(minHeight: UIScreen.main.bounds.height * 0.85)
-        .frame(minWidth: UIScreen.main.bounds.width / 1.6)
+        .containerRelativeFrame(.vertical) { length, _ in length * 0.85 }
+        .containerRelativeFrame(.horizontal) { length, _ in length / 1.6 }
 #elseif os(macOS)
         .padding()
         .frame(minHeight: 460)
