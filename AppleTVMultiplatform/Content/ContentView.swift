@@ -113,10 +113,10 @@ struct ContentView: View {
                         .padding(32)
                         .ignoresSafeArea()
                         .onAppear {
-                            UIApplication.shared.isIdleTimerDisabled = true
+                            PlaybackIdlePrevention.acquire(PlaybackIdlePrevention.streamDetail)
                         }
                         .onDisappear {
-                            UIApplication.shared.isIdleTimerDisabled = false
+                            PlaybackIdlePrevention.release(PlaybackIdlePrevention.streamDetail)
                         }
 
                         if let stream = viewModel.selectedPlaylistStream {
@@ -238,12 +238,10 @@ struct ContentView: View {
                 .accessibilityIdentifier("details")
 #if os(iOS)
                 .onAppear {
-                    guard UIDevice.current.userInterfaceIdiom == .phone else { return }
-                    UIApplication.shared.isIdleTimerDisabled = true
+                    PlaybackIdlePrevention.acquire(PlaybackIdlePrevention.streamDetail)
                 }
                 .onDisappear {
-                    guard UIDevice.current.userInterfaceIdiom == .phone else { return }
-                    UIApplication.shared.isIdleTimerDisabled = false
+                    PlaybackIdlePrevention.release(PlaybackIdlePrevention.streamDetail)
                 }
 #endif
         }

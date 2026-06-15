@@ -88,11 +88,12 @@ final class ContentViewModel {
         guard selectedPlaylist == nil else {
             return
         }
-        guard let appSettings = try? databaseService.mainContext.fetch(FetchDescriptor<AppSettings>()).first,
+        guard let appSettings = try? AppSettings.mergedLastWatchedSettings(in: databaseService.mainContext),
               let name = appSettings.lastPlaylistName,
               let date = appSettings.lastPlaylistDate else {
             return
         }
+        try? databaseService.mainContext.save()
         let identity = PlaylistItem.Identity(name: name, date: date)
         let playlists = (try? databaseService.mainContext.fetch(FetchDescriptor<PlaylistItem>())) ?? []
         guard playlists.contains(where: { $0.identity == identity }) else {

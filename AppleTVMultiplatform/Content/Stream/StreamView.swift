@@ -24,6 +24,8 @@ struct StreamView: View {
 #if os(tvOS)
     @State private var showFullScreen = false
     @State private var showTvOSFullScreenControls = true
+    @State private var tvOSFullScreenControlsAutoHideID = UUID()
+    @FocusState private var tvOSFullScreenInteractionFocused: Bool
     @State private var tvOSPlayer: TvOSPlayer
     @State private var reloadProgramGuide = UUID()
     @Binding private var reselectStream: Bool
@@ -204,12 +206,13 @@ struct StreamView: View {
                         showsControls: showTvOSFullScreenControls
                     )
                 }
+                tvOSFullScreenInteractionLayer()
                 if let playbackErrorMessage {
                     playbackErrorView(playbackErrorMessage)
                 }
             }
             .background(Color.black.ignoresSafeArea())
-            .task {
+            .task(id: tvOSFullScreenControlsAutoHideID) {
                 await autoHideTvOSFullScreenControls()
             }
             .overlay(alignment: .topTrailing) {
@@ -241,12 +244,13 @@ struct StreamView: View {
                         showsControls: showTvOSFullScreenControls
                     )
                 }
+                tvOSFullScreenInteractionLayer()
                 if let playbackErrorMessage {
                     playbackErrorView(playbackErrorMessage)
                 }
             }
             .background(Color.black.ignoresSafeArea())
-            .task {
+            .task(id: tvOSFullScreenControlsAutoHideID) {
                 await autoHideTvOSFullScreenControls()
             }
             .overlay(alignment: .topTrailing) {
@@ -309,8 +313,11 @@ struct StreamView: View {
         }
     }
 
-    private func tvOSPlaybackEngineButton() -> some View {
+    private func tvOSPlaybackEngineButton(resetsFullScreenControls: Bool = false) -> some View {
         Button {
+            if resetsFullScreenControls {
+                revealTvOSFullScreenControls()
+            }
             togglePlaybackEngine()
         } label: {
             Label {
@@ -325,8 +332,9 @@ struct StreamView: View {
 
     private func tvOSFullScreenControls() -> some View {
         HStack(spacing: 12) {
-            tvOSPlaybackEngineButton()
+            tvOSPlaybackEngineButton(resetsFullScreenControls: true)
             Button {
+                revealTvOSFullScreenControls()
                 presentMediaInfo()
             } label: {
                 Image(systemName: "info.circle")
@@ -340,9 +348,36 @@ struct StreamView: View {
         .padding(.trailing, 56)
     }
 
+    private func tvOSFullScreenInteractionLayer() -> some View {
+        Color.clear
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .allowsHitTesting(!showTvOSFullScreenControls)
+            .focusable(!showTvOSFullScreenControls)
+            .focused($tvOSFullScreenInteractionFocused)
+            .onTapGesture {
+                revealTvOSFullScreenControls()
+            }
+            .onMoveCommand { _ in
+                revealTvOSFullScreenControls()
+            }
+            .onPlayPauseCommand {
+                revealTvOSFullScreenControls()
+            }
+    }
+
+    private func revealTvOSFullScreenControls() {
+        tvOSFullScreenInteractionFocused = false
+        withAnimation(.easeIn(duration: 0.2)) {
+            showTvOSFullScreenControls = true
+        }
+        tvOSFullScreenControlsAutoHideID = UUID()
+    }
+
     private func autoHideTvOSFullScreenControls() async {
         await MainActor.run {
             showTvOSFullScreenControls = true
+            tvOSFullScreenInteractionFocused = false
         }
 
         do {
@@ -356,6 +391,7 @@ struct StreamView: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 showTvOSFullScreenControls = false
             }
+            tvOSFullScreenInteractionFocused = true
         }
     }
 #endif

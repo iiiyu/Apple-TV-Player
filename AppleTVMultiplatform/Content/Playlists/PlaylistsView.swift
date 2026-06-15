@@ -2,11 +2,13 @@
 import SwiftUI
 import NukeUI
 import FactoryKit
+import CoreData
 
 struct PlaylistsView: View {
 
     @Binding var selectedPlaylist: PlaylistItem.Identity?
     var onAddPlaylist: (() -> Void)? = nil
+    @Environment(\.scenePhase) private var scenePhase
 #if os(tvOS)
     @State private var showPlaylistSettings: PlaylistItem?
 #endif
@@ -32,10 +34,14 @@ struct PlaylistsView: View {
                 }
             }
             .task {
-                viewModel.updatePlaylists()
-                // Restore the row highlight when the list is recreated
-                // (e.g. after a rename or a file-import refresh).
-                viewModel.updateSelection(selectedPlaylist)
+                refreshPlaylists()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
+                refreshPlaylists()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                refreshPlaylists()
             }
             .onChange(of: viewModel.selectedPlaylist) {
                 selectedPlaylist = viewModel.onPlaylistSelection()
@@ -62,6 +68,13 @@ struct PlaylistsView: View {
                     .padding(44)
             }
 #endif
+    }
+
+    private func refreshPlaylists() {
+        viewModel.updatePlaylists()
+        // Restore the row highlight when the list is recreated
+        // (e.g. after a rename, file import, or CloudKit remote import).
+        viewModel.updateSelection(selectedPlaylist)
     }
 
     private func containerView() -> some View {

@@ -461,7 +461,7 @@ extension PlaylistSettingsViewModel {
 
     func saveInfo() async -> Bool {
         guard infoChanged else {
-            return true
+            return savePendingChanges()
         }
         guard let playlist else {
             return false
@@ -486,6 +486,24 @@ extension PlaylistSettingsViewModel {
     }
 
     // MARK: - Private
+
+    private func savePendingChanges() -> Bool {
+        guard dataChanged else {
+            return true
+        }
+
+        do {
+            try databaseService.mainContext.save()
+            snapshot = makeSnapshot()
+            dataChanged = false
+            return true
+        } catch {
+            databaseService.mainContext.rollback()
+            logger.error(error)
+            self.error = .init(error: error)
+            return false
+        }
+    }
 
     private func populateInfo(from content: PlaylistItem.Content) async {
         editedName = identity.name

@@ -3,11 +3,83 @@ import SwiftUI
 
 #if os(macOS)
 import AppKit
+import IOKit.pwr_mgt
 fileprivate typealias SGHostView = NSView
 #else
 import UIKit
 fileprivate typealias SGHostView = UIView
 #endif
+
+struct PlaybackIdlePreventionToken: Hashable {
+    fileprivate let rawValue: String
+
+    init(_ rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
+@MainActor
+enum PlaybackIdlePrevention {
+    static let streamDetail = PlaybackIdlePreventionToken("stream-detail")
+
+    private static var activeTokenCounts = [PlaybackIdlePreventionToken: Int]()
+#if os(macOS)
+    private static var assertionID = IOPMAssertionID(0)
+#endif
+
+    static func acquire(_ token: PlaybackIdlePreventionToken) {
+        let wasInactive = activeTokenCounts.isEmpty
+        activeTokenCounts[token, default: 0] += 1
+
+        if wasInactive {
+            enableSystemIdlePrevention()
+        }
+    }
+
+    static func release(_ token: PlaybackIdlePreventionToken) {
+        guard let count = activeTokenCounts[token] else { return }
+
+        if count <= 1 {
+            activeTokenCounts.removeValue(forKey: token)
+        } else {
+            activeTokenCounts[token] = count - 1
+        }
+
+        if activeTokenCounts.isEmpty {
+            disableSystemIdlePrevention()
+        }
+    }
+
+    private static func enableSystemIdlePrevention() {
+#if os(iOS) || os(tvOS)
+        UIApplication.shared.isIdleTimerDisabled = true
+#elseif os(macOS)
+        guard assertionID == 0 else { return }
+
+        let result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "HiPlayer video playback" as CFString,
+            &assertionID
+        )
+
+        if result != kIOReturnSuccess {
+            assertionID = 0
+        }
+#endif
+    }
+
+    private static func disableSystemIdlePrevention() {
+#if os(iOS) || os(tvOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+#elseif os(macOS)
+        guard assertionID != 0 else { return }
+
+        IOPMAssertionRelease(assertionID)
+        assertionID = 0
+#endif
+    }
+}
 
 enum SGPlayerCompatibility {
     static var isAvailable: Bool {
@@ -18,10 +90,12 @@ enum SGPlayerCompatibility {
 final class SGPlayerCompatibilitySession {
 
     private let player: NSObject
+    private let idlePreventionToken = PlaybackIdlePreventionToken("sgplayer-\(UUID().uuidString)")
     private var loadedURL: URL?
     private var onPlaybackError: ((String?) -> Void)?
     private var onPlaybackStateChange: ((Bool) -> Void)?
     private var observer: NSObjectProtocol?
+    private var isIdlePreventionActive = false
 
     init?(urlString: String, onPlaybackError: ((String?) -> Void)? = nil) {
         guard let playerClass = SGPlayerRuntime.playerClass as? NSObject.Type else {
@@ -37,6 +111,10 @@ final class SGPlayerCompatibilitySession {
     deinit {
         if let observer {
             NotificationCenter.default.removeObserver(observer)
+        }
+        let token = idlePreventionToken
+        Task { @MainActor in
+            PlaybackIdlePrevention.release(token)
         }
     }
 
@@ -87,11 +165,13 @@ final class SGPlayerCompatibilitySession {
     func play() {
         reportPlaybackError(nil)
         sendBooleanMessage("play")
+        updateIdlePrevention(isPlaying: true)
         reportPlaybackState()
     }
 
     func pause() {
         sendBooleanMessage("pause")
+        updateIdlePrevention(isPlaying: false)
         reportPlaybackState()
     }
 
@@ -143,8 +223,23 @@ final class SGPlayerCompatibilitySession {
 
     private func reportPlaybackState() {
         let isPlaying = isPlaying
+        updateIdlePrevention(isPlaying: isPlaying)
         DispatchQueue.main.async { [weak self] in
             self?.onPlaybackStateChange?(isPlaying)
+        }
+    }
+
+    private func updateIdlePrevention(isPlaying: Bool) {
+        guard isIdlePreventionActive != isPlaying else { return }
+        isIdlePreventionActive = isPlaying
+
+        let token = idlePreventionToken
+        Task { @MainActor in
+            if isPlaying {
+                PlaybackIdlePrevention.acquire(token)
+            } else {
+                PlaybackIdlePrevention.release(token)
+            }
         }
     }
 

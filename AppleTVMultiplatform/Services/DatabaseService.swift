@@ -70,13 +70,21 @@ final class DatabaseService: DatabaseServiceInterface {
             }
             do {
                 sharedModelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
-                logger.info("Database model container", private: modelConfiguration.url.path)
+                if usesCloudKit {
+                    logger.info(
+                        "CloudKit database model container",
+                        private: "\(Self.cloudKitContainerIdentifier) \(modelConfiguration.url.path)"
+                    )
+                } else {
+                    logger.info("Database model container", private: modelConfiguration.url.path)
+                }
             } catch {
                 guard usesCloudKit else {
                     fatalError("Could not create ModelContainer: \(error)")
                 }
 
                 logger.error(error)
+#if DEBUG
                 logger.info("CloudKit model container unavailable. Falling back to local SwiftData store.")
                 let localModelConfiguration = ModelConfiguration(
                     schema: schema,
@@ -89,6 +97,9 @@ final class DatabaseService: DatabaseServiceInterface {
                 } catch {
                     fatalError("Could not create ModelContainer: \(error)")
                 }
+#else
+                fatalError("Could not create CloudKit-backed ModelContainer: \(error)")
+#endif
             }
         }
     }

@@ -245,17 +245,29 @@ final class PlaylistViewModel {
             return
         }
         let hmac = hmacValue(for: stream)
-        if favoriteHmacs.contains(hmac) {
-            favoriteHmacs.remove(hmac)
-            settings.favorites.removeAll { $0 == hmac }
+        var nextFavoriteHmacs = favoriteHmacs
+        var favorites = settings.favorites
+        if nextFavoriteHmacs.contains(hmac) {
+            nextFavoriteHmacs.remove(hmac)
+            favorites.removeAll { $0 == hmac }
         } else {
-            favoriteHmacs.insert(hmac)
-            settings.favorites.append(hmac)
+            nextFavoriteHmacs.insert(hmac)
+            favorites.append(hmac)
         }
-        if settings.orderType == .favorites {
-            Task {
-                await loadStreams()
+
+        settings.favorites = favorites
+
+        do {
+            try databaseService.mainContext.save()
+            favoriteHmacs = nextFavoriteHmacs
+            if settings.orderType == .favorites {
+                Task {
+                    await loadStreams()
+                }
             }
+        } catch {
+            databaseService.mainContext.rollback()
+            logger.error(error, private: content.identity)
         }
     }
 
@@ -285,10 +297,22 @@ final class PlaylistViewModel {
     func selectedStream(_ stream: PlaylistParser.Stream) {
         if let playlist, let settings = playlist.settings {
             let (hmac, encrypted) = encode(title: title(for: stream))
-            settings.views[hmac, default: 0] += 1
-            settings.recent[hmac] = Date()
-            settings.encrypted[hmac] = encrypted
-            saveLastWatched(hmac: hmac)
+            var views = settings.views
+            var recent = settings.recent
+            var encryptedTitles = settings.encrypted
+            views[hmac, default: 0] += 1
+            recent[hmac] = Date()
+            encryptedTitles[hmac] = encrypted
+            settings.views = views
+            settings.recent = recent
+            settings.encrypted = encryptedTitles
+            do {
+                try saveLastWatched(hmac: hmac)
+                try databaseService.mainContext.save()
+            } catch {
+                databaseService.mainContext.rollback()
+                logger.error(error, private: content.identity)
+            }
         }
     }
 
@@ -301,15 +325,8 @@ final class PlaylistViewModel {
         return nil
     }
 
-    private func saveLastWatched(hmac: String) {
-        let fetch = FetchDescriptor<AppSettings>()
-        let appSettings: AppSettings
-        if let existing = (try? databaseService.mainContext.fetch(fetch))?.first {
-            appSettings = existing
-        } else {
-            appSettings = AppSettings()
-            databaseService.mainContext.insert(appSettings)
-        }
+    private func saveLastWatched(hmac: String) throws {
+        let appSettings = try AppSettings.lastWatchedSettings(in: databaseService.mainContext)
         appSettings.lastPlaylistName = content.identity.name
         appSettings.lastPlaylistDate = content.identity.date
         appSettings.lastStreamHmac = hmac
