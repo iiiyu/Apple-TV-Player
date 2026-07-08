@@ -25,7 +25,7 @@ struct StreamView: View {
     @State private var isSGPlayerPlaying = true
     @State private var sgPlayerVolume = 1.0
 #if os(iOS)
-    @State private var showSGPlayerFullScreen = false
+    @State private var iosFullScreen = IOSSGPlayerFullScreenController()
 #endif
 #if os(macOS)
     @State private var macFullScreen = MacSGPlayerFullScreenController()
@@ -151,28 +151,6 @@ struct StreamView: View {
         .onChange(of: useSGPlayerCompatibility) {
             activateSelectedPlaybackEngine()
         }
-#if os(iOS)
-        .fullScreenCover(isPresented: $showSGPlayerFullScreen, onDismiss: {
-            activateSelectedPlaybackEngine()
-        }) {
-            ZStack {
-                sgPlayerSurface(
-                    isFullScreen: true,
-                    fullScreenSystemImage: "xmark",
-                    fullScreenAccessibilityLabel: "Exit Full Screen"
-                ) {
-                    showSGPlayerFullScreen = false
-                }
-                .ignoresSafeArea()
-
-                if let playbackErrorMessage {
-                    playbackErrorView(playbackErrorMessage)
-                }
-            }
-            .background(.black)
-            .modifier(IOSVideoFullScreenOrientationModifier())
-        }
-#endif
 #if os(tvOS)
         .fullScreenCover(isPresented: $showFullScreen, onDismiss: {
             reloadCurrentProgram = .init()
@@ -470,7 +448,7 @@ struct StreamView: View {
 #else
         if useSGPlayerCompatibility {
             sgPlayerSurface {
-                showSGPlayerFullScreen = true
+                presentIOSSGPlayerFullScreen()
             }
         } else {
             iOSPlayerView(
@@ -481,6 +459,23 @@ struct StreamView: View {
         }
 #endif
     }
+
+#if os(iOS)
+    private func presentIOSSGPlayerFullScreen() {
+        guard let sgPlayer else { return }
+        iosFullScreen.present(
+            session: sgPlayer,
+            urlString: viewModel.stream.url,
+            volume: sgPlayerVolume,
+            onPlaybackError: handlePlaybackError,
+            onClose: {
+                isSGPlayerPlaying = true
+                reloadCurrentProgram = .init()
+                activateSelectedPlaybackEngine()
+            }
+        )
+    }
+#endif
 
     @ViewBuilder
     private func sgPlayerSurface(
@@ -811,6 +806,7 @@ private struct SGPlayerSurface: View {
                 widthMultiplier: widthMultiplier,
                 sharedSession: session,
                 attachPriority: attachPriority,
+                fillsAvailableSpace: isFullScreen,
                 onPlaybackError: onPlaybackError
             )
             .background(.black)
@@ -1379,16 +1375,134 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
 #endif
 
 #if os(iOS)
-private struct IOSVideoFullScreenOrientationModifier: ViewModifier {
+/// Presents the SGPlayer video full-screen in a landscape-locked view
+/// controller. A real presented controller (declaring `.landscape`) rotates
+/// cleanly and keeps SwiftUI hit-testing aligned with the rotation, so the
+/// player controls remain tappable — unlike a `.fullScreenCover` forced to
+/// rotate via a geometry update, where taps landed in the stale portrait frame.
+@MainActor
+final class IOSSGPlayerFullScreenController {
 
-    func body(content: Content) -> some View {
-        content
-            .onAppear {
-                IOSVideoOrientationCoordinator.enterFullScreen()
+    private weak var presented: UIViewController?
+
+    func present(
+        session: SGPlayerCompatibilitySession,
+        urlString: String,
+        volume: Double,
+        onPlaybackError: @escaping (String?) -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        guard presented == nil, let top = Self.topViewController() else { return }
+
+        IOSVideoOrientationCoordinator.enterFullScreen()
+
+        let content = IOSSGPlayerFullScreenView(
+            session: session,
+            urlString: urlString,
+            initialVolume: volume,
+            onPlaybackError: onPlaybackError,
+            onExit: { [weak self] in self?.dismiss() }
+        )
+        let controller = LandscapeHostingController(rootView: AnyView(content))
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        controller.onDismiss = onClose
+        presented = controller
+        top.present(controller, animated: true)
+    }
+
+    func dismiss() {
+        guard let presented else { return }
+        self.presented = nil
+        presented.dismiss(animated: true) {
+            IOSVideoOrientationCoordinator.exitFullScreen()
+        }
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let keyWindow = scenes
+            .first { $0.activationState == .foregroundActive }?
+            .windows.first { $0.isKeyWindow }
+            ?? scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
+        var top = keyWindow?.rootViewController
+        while let next = top?.presentedViewController {
+            top = next
+        }
+        return top
+    }
+}
+
+final class LandscapeHostingController<Content: View>: UIHostingController<Content> {
+
+    var onDismiss: (() -> Void)?
+
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
+    override var shouldAutorotate: Bool { true }
+    override var prefersHomeIndicatorAutoHidden: Bool { true }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        let onDismiss = onDismiss
+        self.onDismiss = nil
+        onDismiss?()
+    }
+}
+
+private struct IOSSGPlayerFullScreenView: View {
+
+    let session: SGPlayerCompatibilitySession
+    let urlString: String
+    let initialVolume: Double
+    let onPlaybackError: (String?) -> Void
+    let onExit: () -> Void
+    @State private var isPlaying = true
+    @State private var volume = 1.0
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            SGPlayerSurface(
+                urlString: urlString,
+                widthMultiplier: 1,
+                session: session,
+                attachPriority: 2,
+                onPlaybackError: { message in
+                    errorMessage = message
+                    onPlaybackError(message)
+                },
+                isPlaying: $isPlaying,
+                volume: $volume,
+                isFullScreen: true,
+                showsControls: true,
+                fullScreenSystemImage: "xmark",
+                fullScreenAccessibilityLabel: "Exit Full Screen",
+                fullScreenAction: onExit
+            )
+            .ignoresSafeArea()
+
+            if let errorMessage {
+                ContentUnavailableView {
+                    Label("Unable to Play Channel", systemImage: "lock.slash")
+                } description: {
+                    Text(errorMessage)
+                }
+                .frame(maxWidth: 480)
+                .glassEffect(.regular, in: .rect(cornerRadius: 20))
             }
-            .onDisappear {
-                IOSVideoOrientationCoordinator.exitFullScreen()
-            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            volume = initialVolume
+            isPlaying = session.isPlaying
+        }
     }
 }
 

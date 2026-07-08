@@ -505,6 +505,7 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
     let widthMultiplier: CGFloat
     let sharedSession: SGPlayerCompatibilitySession?
     let attachPriority: Int
+    let fillsAvailableSpace: Bool
     let onPlaybackError: (String?) -> Void
 
     init(
@@ -512,12 +513,14 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
         widthMultiplier: CGFloat = 1,
         sharedSession: SGPlayerCompatibilitySession? = nil,
         attachPriority: Int = 0,
+        fillsAvailableSpace: Bool = false,
         onPlaybackError: @escaping (String?) -> Void
     ) {
         self.urlString = urlString
         self.widthMultiplier = widthMultiplier
         self.sharedSession = sharedSession
         self.attachPriority = attachPriority
+        self.fillsAvailableSpace = fillsAvailableSpace
         self.onPlaybackError = onPlaybackError
     }
 
@@ -540,6 +543,11 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        // Full-screen fills the available space (SGPlayer letterboxes via its
+        // aspect-fit scaling mode); inline reports a 16:9 box.
+        if fillsAvailableSpace {
+            return nil
+        }
         guard let width = proposal.width else { return nil }
         let adjustedWidth = width * widthMultiplier
         return .init(width: adjustedWidth, height: adjustedWidth * (9.0 / 16.0))
@@ -578,6 +586,7 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
     let widthMultiplier: CGFloat
     let sharedSession: SGPlayerCompatibilitySession?
     let attachPriority: Int
+    let fillsAvailableSpace: Bool
     let onPlaybackError: (String?) -> Void
 
     init(
@@ -585,12 +594,14 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
         widthMultiplier: CGFloat = 1,
         sharedSession: SGPlayerCompatibilitySession? = nil,
         attachPriority: Int = 0,
+        fillsAvailableSpace: Bool = false,
         onPlaybackError: @escaping (String?) -> Void
     ) {
         self.urlString = urlString
         self.widthMultiplier = widthMultiplier
         self.sharedSession = sharedSession
         self.attachPriority = attachPriority
+        self.fillsAvailableSpace = fillsAvailableSpace
         self.onPlaybackError = onPlaybackError
     }
 
@@ -613,6 +624,11 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+        // Full-screen fills the available space (SGPlayer letterboxes via its
+        // aspect-fit scaling mode); inline reports a 16:9 box.
+        if fillsAvailableSpace {
+            return nil
+        }
         guard let width = proposal.width else { return nil }
         let adjustedWidth = width * widthMultiplier
         return .init(width: adjustedWidth, height: adjustedWidth * (9.0 / 16.0))

@@ -14,8 +14,9 @@ struct PlaylistAddView: View {
             List {
                 Section("Playlist") {
                     HStack {
-                        Text("Name")
-                        textField("Optional", text: $viewModel.name)
+                        Text(verbatim: "URL")
+                        textField("Required", text: $viewModel.urlString)
+                            .modifier(KeyboardURLTypeModifier())
                             .focused($isTextFieldFocused)
                             .onAppear {
                                 if ProcessInfo.processInfo.isPreview || ProcessInfo.processInfo.isRunningUITests {
@@ -23,13 +24,12 @@ struct PlaylistAddView: View {
                                 }
                                 isTextFieldFocused = true
                             }
-                            .accessibilityIdentifier("name")
+                            .accessibilityIdentifier("url")
                     }
                     HStack {
-                        Text(verbatim: "URL")
-                        textField("Required", text: $viewModel.urlString)
-                            .modifier(KeyboardURLTypeModifier())
-                            .accessibilityIdentifier("url")
+                        Text("Name")
+                        textField("Optional", text: $viewModel.name)
+                            .accessibilityIdentifier("name")
                     }
                     HStack {
                         Text("Passcode")

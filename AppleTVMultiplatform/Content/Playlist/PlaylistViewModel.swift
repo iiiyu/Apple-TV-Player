@@ -20,6 +20,7 @@ final class PlaylistViewModel {
     }
 
     @ObservationIgnored @Injected(\.playlistService) private var playlistService
+    @ObservationIgnored @Injected(\.playlistAddService) private var playlistAddService
     @ObservationIgnored @Injected(\.databaseService) private var databaseService
     @ObservationIgnored @Injected(\.logger) private var logger
 
@@ -96,10 +97,19 @@ final class PlaylistViewModel {
         guard !isLoading, !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+
+        // For a non-encrypted playlist, actually re-download from the origin URL
+        // so pull-to-refresh shows the current channel list. Encrypted playlists
+        // need the passcode, handled by Settings → Update Playlist, so there we
+        // only re-parse the stored copy.
+        if await redownloadIfPossible() {
+            await loadStreams()
+            return
+        }
+
         do {
-            // Force a re-parse of the stored playlist plus a reload of the
-            // program guide and logos. Unlike the settings update flow this
-            // never re-downloads from the origin URL, so no pin is needed.
+            // Fallback: re-parse the stored playlist plus a reload of the
+            // program guide and logos, without re-downloading from origin.
             _ = try await playlistService.playlists(for: content, reloadPlaylist: true) { _, _ in }
         } catch {
             logger.error(error, private: content.id)
@@ -107,6 +117,88 @@ final class PlaylistViewModel {
             return
         }
         await loadStreams()
+    }
+
+    /// Re-downloads a non-encrypted playlist from its origin URL, refreshes the
+    /// cache, and persists it. Returns false (so the caller falls back to a
+    /// cache re-parse) for encrypted playlists or on any failure.
+    private func redownloadIfPossible() async -> Bool {
+        let stored = (try? databaseService.mainContext.fetch(FetchDescriptor<PlaylistItem>()))?
+            .first { $0.identity == content.identity }
+        guard let stored,
+              !stored.encrypted,
+              let urlData = stored.url,
+              let urlString = String(data: urlData, encoding: .utf8),
+              URL(string: urlString)?.scheme != nil else {
+            return false
+        }
+
+        let progressHandler: PlaylistAddService.ProgressHandler = { [weak self] _, step in
+            Task { @MainActor in
+                switch step {
+                case .start, .complete:
+                    break
+                default:
+                    self?.progress = step.title
+                }
+            }
+        }
+
+        do {
+            // Carry over EPG/logo tags from the cached copy, since a source M3U
+            // may omit url-tvg/url-img/tvg-logo added during the Add flow.
+            let cached = try? await playlistService.playlists(
+                for: content, reloadPlaylist: false, progress: { _, _ in }
+            ).first
+            let prepared = try await playlistAddService.preparePlaylist(
+                name: content.identity.name,
+                urlString: urlString,
+                pin: nil,
+                urlTvg: cached?.tvgURL ?? cached?.xTvgURL,
+                urlImg: cached?.imageURL,
+                tvgLogo: cached?.tvgLogo,
+                progress: progressHandler
+            )
+            let restored = try await playlistAddService.restorePlaylist(prepared, pin: nil)
+            let refreshContent = PlaylistItem.Content(
+                identity: content.identity,
+                url: restored.url,
+                data: restored.data,
+                isStoredInMemoryOnly: restored.isStoredInMemoryOnly
+            )
+            let playlists = try await playlistService.playlists(
+                for: refreshContent, reloadPlaylist: true, progress: { [weak self] _, step in
+                    Task { @MainActor in
+                        switch step {
+                        case .start, .complete:
+                            break
+                        default:
+                            self?.progress = step.title
+                        }
+                    }
+                }
+            )
+            guard playlists.contains(where: { !$0.streams.isEmpty }) else {
+                // Empty/broken download: fall back to the previous content
+                // (the caller re-parses the cache).
+                logger.info("Refresh produced an empty playlist, keeping cache", private: content.id)
+                return false
+            }
+            // Persist so the refreshed list survives relaunch.
+            stored.url = prepared.url
+            stored.icon = prepared.icon
+            stored.salt = prepared.salt
+            if let state = try? PlaylistSettingsItem.state(for: content.identity, in: databaseService.mainContext) {
+                state.data = prepared.data
+            }
+            try? databaseService.mainContext.save()
+            return true
+        } catch {
+            // Best-effort: on failure fall back to the cached copy (re-parsed
+            // by the caller) rather than surfacing a hard error.
+            logger.error(error, private: content.id)
+            return false
+        }
     }
 
     func loadStreams() async {
