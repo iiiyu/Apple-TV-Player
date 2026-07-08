@@ -15,10 +15,22 @@ final class ContentViewModel {
     var selectedPlaylistStream: PlaylistParser.Stream?
     var isShowingPlaylistAdd = false
     var isShowingPlaylistDecryptPin: PlaylistItem.Identity?
+    var errorMessage: String?
+    var isShowingError = false
 #if os(tvOS)
     var path: [PlaylistItem.Content] = []
 #endif
     private(set) var playlistListUpdate = UUID()
+    @ObservationIgnored private var selectionTask: Task<Void, Never>?
+
+    /// Starts loading the newly selected playlist, cancelling any in-flight
+    /// selection so a slow earlier tap can't overwrite a later one.
+    func onPlaylistSelectionChanged() {
+        selectionTask?.cancel()
+        selectionTask = Task { [weak self] in
+            await self?.onPlaylistSelected()
+        }
+    }
 
     func onPlaylistSelected() async {
         selectedPlaylistContent = nil
@@ -26,7 +38,6 @@ final class ContentViewModel {
         isShowingPlaylistDecryptPin = nil
 
         guard let identity = selectedPlaylist else {
-            logger.error("Playlist delected")
             return
         }
         logger.info("Playlist selected", private: identity)
@@ -49,15 +60,32 @@ final class ContentViewModel {
                     return
                 }
                 let restoredPlaylist = try await playlistAddService.restorePlaylist(preparedPlaylist, pin: nil)
+                // The selection may have changed (or been cancelled) while the
+                // playlist was downloading; don't clobber a newer selection.
+                guard !Task.isCancelled, selectedPlaylist == identity else {
+                    return
+                }
                 logger.info("Show Playlist", private: identity)
                 selectedPlaylistContent = restoredPlaylist.content
 #if os(tvOS)
                 path = [restoredPlaylist.content]
 #endif
             }
+        } catch is CancellationError {
+            return
         } catch {
             logger.error(error)
+            guard selectedPlaylist == identity else { return }
+            errorMessage = errorText(for: error)
+            isShowingError = true
         }
+    }
+
+    private func errorText(for error: Swift.Error) -> String {
+        if let localized = error as? LocalizedError, let description = localized.errorDescription, !description.isEmpty {
+            return description
+        }
+        return String(localized: "This playlist could not be opened. Check your connection and try again.")
     }
 
     func onDecrypt() {

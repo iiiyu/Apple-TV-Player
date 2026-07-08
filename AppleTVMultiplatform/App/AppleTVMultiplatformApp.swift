@@ -2,6 +2,9 @@
 import SwiftUI
 import SwiftData
 import FactoryKit
+#if os(iOS)
+import UIKit
+#endif
 
 @main
 struct AppleTVMultiplatformApp: App {
@@ -9,10 +12,19 @@ struct AppleTVMultiplatformApp: App {
     @State private var viewModel = AppleTVMultiplatformAppViewModel()
     @State private var playlistListUpdate: UUID = .init()
     @InjectedObservable(\.logger) var logger
+#if os(iOS)
+    @UIApplicationDelegateAdaptor(HiPlayerAppDelegate.self) private var appDelegate
+#endif
 
     var body: some Scene {
         WindowGroup {
             ContentView(playlistListUpdate: $playlistListUpdate)
+#if os(macOS)
+                // Keep the detail pane wide enough for the SGPlayer control row
+                // (sidebar + channel list + player). Below this the controls
+                // overflow their bar.
+                .frame(minWidth: 1000, minHeight: 560)
+#endif
 #if os(macOS) && DEBUG
                 .modifier(SnapshotTestScreenSizeRatioViewModifier())
 #endif
@@ -31,6 +43,23 @@ struct AppleTVMultiplatformApp: App {
         }
     }
 }
+
+#if os(iOS)
+final class HiPlayerAppDelegate: NSObject, UIApplicationDelegate {
+
+    static var orientationLock: UIInterfaceOrientationMask?
+
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        if let orientationLock = Self.orientationLock {
+            return orientationLock
+        }
+        return UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
+    }
+}
+#endif
 
 #if os(macOS) && DEBUG
 private struct SnapshotTestScreenSizeRatioViewModifier: ViewModifier {

@@ -77,7 +77,9 @@ struct PlaylistParserTests {
         let lastStream = try #require(parsedPlaylist.streams.last)
 
         #expect(lastStream.title == "Amedia Premium (480p)")
-        #expect(lastStream.url == "https://example.tv/streams/premium.m3u8")
+        // The #EXTVLCOPT user-agent is folded into the URL as a pipe-option
+        // so the playback engines send it.
+        #expect(lastStream.url == "https://example.tv/streams/premium.m3u8|User-Agent=Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
         #expect(lastStream.tvgLogo == "https://example.com/logos/premium.png")
         #expect(lastStream.tvgID == "AmediaPremium.ru")
         #expect(lastStream.tvgName == nil)

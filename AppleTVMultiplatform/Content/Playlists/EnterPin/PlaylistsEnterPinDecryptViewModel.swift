@@ -21,7 +21,8 @@ final class PlaylistsEnterPinDecryptViewModel {
 
     func onPinInput() async -> PlaylistItem.Content? {
         do {
-            logger.info("Receive to decrypt the pin", private: pin)
+            // Never log the pin itself: it derives the AES key.
+            logger.info("Received pin to decrypt playlist")
             let fetch = FetchDescriptor<PlaylistItem>()
             guard let playlist = (try databaseService.mainContext.fetch(fetch))
                 .first(where: { $0.identity == identity }), playlist.encrypted else {

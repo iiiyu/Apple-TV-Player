@@ -38,7 +38,8 @@ final class PlaylistAddViewModel {
             let log: [String] = [
                 "Preparing playlist with name: \(name)",
                 "URL: \(urlString)",
-                "PIN: \(pin)",
+                // The pin derives the AES key; log only whether one was set.
+                "PIN: \(pin.isEmpty ? "none" : "set")",
                 "URL TVG: \(urlTvg)",
                 "URL IMG: \(urlImg)",
                 "TVG Logo: \(tvgLogo)"

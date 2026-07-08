@@ -7,11 +7,11 @@ struct ConfirmButtonView: View {
 
     var body: some View {
         #if os(iOS)
-        Button("Done", systemImage: "checkmark", role: nil, action: action)
+        Button("Done", systemImage: "checkmark", role: .confirm, action: action)
             .buttonStyle(.glassProminent)
             .accessibilityIdentifier("confirm")
         #else
-        Button("Done", action: action)
+        Button("Done", role: .confirm, action: action)
             .buttonStyle(.glassProminent)
             .accessibilityIdentifier("confirm")
         #endif

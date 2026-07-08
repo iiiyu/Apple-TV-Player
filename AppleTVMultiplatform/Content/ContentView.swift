@@ -35,9 +35,12 @@ struct ContentView: View {
             }
 #endif
             .onChange(of: viewModel.selectedPlaylist) {
-                Task {
-                    await viewModel.onPlaylistSelected()
-                }
+                viewModel.onPlaylistSelectionChanged()
+            }
+            .alert("Unable to Open Playlist", isPresented: $viewModel.isShowingError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(viewModel.errorMessage ?? "")
             }
             .onChange(of: playlistListUpdate) {
                 viewModel.updatePlaylists()
@@ -202,13 +205,13 @@ struct ContentView: View {
                 .accessibilityIdentifier("acknowledgements")
             }
             ToolbarItem(placement: .secondaryAction) {
-                AddButtonView {
+                AddButtonView(isToolbar: true) {
                     viewModel.onAddPlaylist()
                 }
             }
 #else
             ToolbarItem {
-                AddButtonView {
+                AddButtonView(isToolbar: true) {
                     viewModel.onAddPlaylist()
                 }
             }

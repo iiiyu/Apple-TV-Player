@@ -75,6 +75,53 @@ struct ProgramGuideParserTests {
         })
     }
 
+    @Test func appliesTimeZoneOffsetAndTruncatedTimestamps() async throws {
+        // start has a +0300 offset (→ 11:00 UTC); stop is a 12-digit
+        // truncated timestamp with a -0130 offset (→ 13:30 UTC).
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <tv>
+          <channel id="c1"><display-name>Offset TV</display-name></channel>
+          <programme channel="c1" start="20260218140000 +0300" stop="202602181200 -0130">
+            <title>Offset Show</title>
+          </programme>
+        </tv>
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("offset-guide-\(UUID().uuidString).xml")
+        try Data(xml.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let guides = try await ProgramGuideParser().parse(xmlURL: url)
+        let program = try #require(guides.first?.programs.first)
+
+        #expect(program.start == date(year: 2026, month: 2, day: 18, hour: 11, minute: 0, second: 0))
+        #expect(program.stop == date(year: 2026, month: 2, day: 18, hour: 13, minute: 30, second: 0))
+    }
+
+    @Test func decodesNonUTF8Guide() async throws {
+        // A windows-1251 (Cyrillic) guide declaring its encoding in the prolog.
+        let xml = """
+        <?xml version="1.0" encoding="windows-1251"?>
+        <tv>
+          <channel id="c1"><display-name>Первый</display-name></channel>
+          <programme channel="c1" start="20260218140000 +0000" stop="20260218150000 +0000">
+            <title>Новости</title>
+          </programme>
+        </tv>
+        """
+        let data = try #require(xml.data(using: .windowsCP1251))
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cyrillic-guide-\(UUID().uuidString).xml")
+        try data.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let guides = try await ProgramGuideParser().parse(xmlURL: url)
+
+        #expect(guides.first?.channel.displayName == "Первый")
+        #expect(guides.first?.programs.first?.title == "Новости")
+    }
+
     private var expectedGuides: [ProgramGuide] {
         [
             ProgramGuide(

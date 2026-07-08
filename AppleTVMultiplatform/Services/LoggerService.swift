@@ -34,7 +34,7 @@ nonisolated final class LoggerService {
         line: Int = #line
     ) {
         let link = fileLink(file: file, line: line)
-        logger.info("\(link, privacy: .public) \(message, privacy: .public) \(`private`, privacy: .private)")
+        logger.debug("\(link, privacy: .public) \(message, privacy: .public) \(`private`, privacy: .private)")
     }
 
     func error(

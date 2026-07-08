@@ -16,6 +16,7 @@ final class StreamPlayerController {
     var onPlaybackError: (String?) -> Void
 
     private let originalURL: URL?
+    private let requestHeaders: [String: String]
     private var activeURL: URL?
     private let logger = Container.shared.logger()
     private var playerObservers: Set<AnyCancellable> = []
@@ -36,10 +37,19 @@ final class StreamPlayerController {
         onPlaybackError: @escaping (String?) -> Void = { _ in }
     ) {
         self.onPlaybackError = onPlaybackError
-        originalURL = URL(string: urlString)
+        let streamURL = StreamURL(urlString)
+        originalURL = streamURL?.url
+        requestHeaders = streamURL?.headers ?? [:]
         activeURL = originalURL
         shouldPlayWhenReady = autoplays
-        load()
+        // Only open the stream eagerly when this engine is the one that will
+        // play. A deferred (autoplays == false) controller must not hold a
+        // second live connection — providers with a per-account connection
+        // cap would drop the active SGPlayer stream. play()/retry() load it
+        // on demand.
+        if autoplays {
+            load()
+        }
 
         player.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
@@ -105,7 +115,7 @@ final class StreamPlayerController {
         itemObservers = []
         cancelCurrentItemLoading()
         resetPlaybackProgress()
-        let item = Self.playerItem(for: activeURL)
+        let item = Self.playerItem(for: activeURL, headers: requestHeaders)
 
         item.publisher(for: \.status)
             .receive(on: DispatchQueue.main)
@@ -303,11 +313,22 @@ final class StreamPlayerController {
         return true
     }
 
-    private static func playerItem(for url: URL) -> AVPlayerItem {
-        let asset = AVURLAsset(
-            url: url,
-            options: [AVURLAssetPreferPreciseDurationAndTimingKey: false]
-        )
+    private static func playerItem(for url: URL, headers: [String: String]) -> AVPlayerItem {
+        var options: [String: Any] = [AVURLAssetPreferPreciseDurationAndTimingKey: false]
+        if let userAgent = headers.first(where: {
+            $0.key.compare("User-Agent", options: .caseInsensitive) == .orderedSame
+        })?.value {
+            options[AVURLAssetHTTPUserAgentKey] = userAgent
+        }
+        let extraHeaders = headers.filter {
+            $0.key.compare("User-Agent", options: .caseInsensitive) != .orderedSame
+        }
+        if !extraHeaders.isEmpty {
+            // Not a public key, but the long-standing way to attach request
+            // headers (Referer, Cookie, …) to an AVURLAsset.
+            options["AVURLAssetHTTPHeaderFieldsKey"] = extraHeaders
+        }
+        let asset = AVURLAsset(url: url, options: options)
         let item = AVPlayerItem(asset: asset)
         item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
         item.preferredForwardBufferDuration = 5

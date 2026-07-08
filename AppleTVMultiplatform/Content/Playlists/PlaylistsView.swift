@@ -3,6 +3,7 @@ import SwiftUI
 import NukeUI
 import FactoryKit
 import CoreData
+import Combine
 
 struct PlaylistsView: View {
 
@@ -36,7 +37,14 @@ struct PlaylistsView: View {
             .task {
                 refreshPlaylists()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
+            .onReceive(
+                NotificationCenter.default
+                    .publisher(for: .NSPersistentStoreRemoteChange)
+                    .receive(on: DispatchQueue.main)
+            ) { _ in
+                // The remote-change notification is posted on a background
+                // queue; the refresh touches MainActor UI state and the
+                // main SwiftData context, so it must hop to main first.
                 refreshPlaylists()
             }
             .onChange(of: scenePhase) { _, newPhase in
@@ -64,8 +72,10 @@ struct PlaylistsView: View {
             .sheet(item: $showPlaylistSettings, onDismiss: {
                 viewModel.updatePlaylists()
             }) { playlist in
-                PlaylistSettingsView(identity: playlist.identity!, onUpdate: .constant(.init()))
-                    .padding(44)
+                if let identity = playlist.identity {
+                    PlaylistSettingsView(identity: identity, onUpdate: .constant(.init()))
+                        .padding(44)
+                }
             }
 #endif
     }
@@ -241,9 +251,9 @@ private struct ActionsViewModifier: ViewModifier {
                     return Data()
                 }
                 let cacheURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("\(share.title)")
-                    .appendingPathComponent("-\(share.identity.date.timeIntervalSince1970)-")
-                    .appendingPathComponent(url.lastPathComponent)
+                    .appendingPathComponent(
+                        "playlist-icon-\(share.identity.date.timeIntervalSince1970)-\(url.lastPathComponent)"
+                    )
                 guard let cacheData = try? Data(contentsOf: cacheURL) else {
                     guard let data = try? Data(contentsOf: url) else {
                         return Data()

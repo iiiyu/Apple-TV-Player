@@ -10,7 +10,9 @@ struct CancelButtonView: View {
         Button("Cancel", role: .cancel, action: action)
             .accessibilityIdentifier("cancel")
 #else
-        Button("Cancel", systemImage: "xmark", role: nil, action: action)
+        // iOS 26: the .close role renders the standard circular
+        // glass close button in toolbars.
+        Button("Cancel", role: .close, action: action)
             .accessibilityIdentifier("cancel")
 #endif
     }

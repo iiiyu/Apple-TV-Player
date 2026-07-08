@@ -63,8 +63,7 @@ struct ProgramGuideViewModelTests {
         )
 
         await viewModel.loadPrograms()
-        viewModel.displayedPrograms(at: now, stream: stream)
-        let displayedPrograms = viewModel.displayProgram
+        let displayedPrograms = viewModel.displayedPrograms(at: now, stream: stream).displayed
 
         #expect(displayedPrograms.map({ $0.program.title }) == [
             "Past 6",
@@ -103,13 +102,13 @@ struct ProgramGuideViewModelTests {
         )
 
         await viewModel.loadPrograms()
-        viewModel.displayedPrograms(at: now, stream: stream)
-        let displayedPrograms = viewModel.displayProgram
+        let snapshot = viewModel.displayedPrograms(at: now, stream: stream)
+        let displayedPrograms = snapshot.displayed
 
         // 12:00 is halfway through the 11:30-12:30 program.
         #expect(displayedPrograms.first(where: { $0.state == .now })?.progress == 0.5)
         #expect(displayedPrograms.filter({ $0.state != .now }).allSatisfy({ $0.progress == nil }))
-        #expect(viewModel.originStreamCurrentProgram?.progress == 0.5)
+        #expect(snapshot.originCurrent?.progress == 0.5)
     }
 
     @Test func progressClampsOutOfBoundsValues() {
@@ -142,8 +141,8 @@ struct ProgramGuideViewModelTests {
         await viewModel.loadPrograms()
 
         #expect(viewModel.programs.isEmpty)
-        viewModel.displayedPrograms(at: date(day: 1, hour: 12, minute: 0), stream: viewModel.stream)
-        #expect(viewModel.displayProgram.isEmpty)
+        let snapshot = viewModel.displayedPrograms(at: date(day: 1, hour: 12, minute: 0), stream: viewModel.stream)
+        #expect(snapshot.displayed.isEmpty)
     }
 }
 

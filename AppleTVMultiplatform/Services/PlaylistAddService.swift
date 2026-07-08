@@ -182,11 +182,12 @@ actor PlaylistAddService: PlaylistAddServiceInterface {
         tvgLogo: String?,
         progress: ProgressHandler
     ) async throws -> PreparedPlaylist {
-        let progressList = Progress.allCases.filter {
-            if pin == nil {
-                return true
-            }
-            return $0 != .encrypting
+        // The `.encrypting` step only runs when a (non-empty) pin is provided;
+        // keep it in the planned step list exactly when it will actually be
+        // reported, so progress fractions line up.
+        let willEncrypt = normalized(pin) != nil
+        let progressList = Progress.allCases.filter { step in
+            step != .encrypting || willEncrypt
         }
         defer {
             progress(progressList, .complete)

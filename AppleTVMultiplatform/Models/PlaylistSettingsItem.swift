@@ -1,6 +1,7 @@
 
 import Foundation
 import SwiftData
+import FactoryKit
 
 @Model
 final class PlaylistSettingsItem {
@@ -195,11 +196,23 @@ extension PlaylistSettingsItem {
 private extension PlaylistSettingsItem {
 
     static func encode<Value: Encodable>(_ value: Value) -> Data? {
-        try? JSONEncoder().encode(value)
+        do {
+            return try JSONEncoder().encode(value)
+        } catch {
+            Container.shared.logger().error(error)
+            return nil
+        }
     }
 
     static func decode<Value: Decodable>(_ type: Value.Type, from data: Data?) -> Value? {
         guard let data else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            // Surface corruption instead of silently returning an empty value
+            // that a later write would persist over the stored statistics.
+            Container.shared.logger().error(error, private: "Corrupt \(type) blob in PlaylistSettingsItem")
+            return nil
+        }
     }
 }

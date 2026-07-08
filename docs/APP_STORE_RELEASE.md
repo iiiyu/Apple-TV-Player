@@ -96,3 +96,7 @@ asc validate --app 6780068053 --version 1.0 --platform TV_OS --output table
 ```
 
 Builds are uploaded separately via `asc xcode` / `asc publish`. Review contact details are account-specific and should be filled with real contact information before submission.
+
+Before submitting a new app or a new platform, prepare App Review Information
+notes and physical-device recordings using
+[APP_REVIEW_2_1_RESPONSE.md](APP_REVIEW_2_1_RESPONSE.md).

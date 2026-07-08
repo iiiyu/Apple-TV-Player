@@ -35,14 +35,21 @@ enum StreamMediaInfoLoader {
     }
 
     static func load(urlString: String) async throws -> StreamMediaInfo {
-        guard let url = URL(string: urlString) else {
+        guard let streamURL = StreamURL(urlString) else {
             throw LoaderError.invalidURL
         }
 
-        let asset = AVURLAsset(
-            url: url,
-            options: [AVURLAssetPreferPreciseDurationAndTimingKey: false]
-        )
+        var options: [String: Any] = [AVURLAssetPreferPreciseDurationAndTimingKey: false]
+        if let userAgent = streamURL.headerValue(named: "User-Agent") {
+            options[AVURLAssetHTTPUserAgentKey] = userAgent
+        }
+        let extraHeaders = streamURL.headers.filter {
+            $0.key.compare("User-Agent", options: .caseInsensitive) != .orderedSame
+        }
+        if !extraHeaders.isEmpty {
+            options["AVURLAssetHTTPHeaderFieldsKey"] = extraHeaders
+        }
+        let asset = AVURLAsset(url: streamURL.url, options: options)
         let tracks = try await asset.load(.tracks)
         let videoTrack = tracks.first(where: { $0.mediaType == .video })
         let audioTrack = tracks.first(where: { $0.mediaType == .audio })
@@ -161,13 +168,20 @@ enum StreamMediaInfoLoader {
 
         let channels = Int(streamDescription.pointee.mChannelsPerFrame)
         guard channels > 0 else { return nil }
-        if channels == 1 {
+        switch channels {
+        case 1:
             return String(localized: "Mono")
-        }
-        if channels == 2 {
+        case 2:
             return String(localized: "Stereo")
+        case 6:
+            return "5.1"
+        case 8:
+            return "7.1"
+        default:
+            // Fall back to a plain channel count rather than a fabricated
+            // ".0" layout label.
+            return String(format: String(localized: "%d channels"), channels)
         }
-        return "\(channels).0"
     }
 
     private static func dynamicRangeText(

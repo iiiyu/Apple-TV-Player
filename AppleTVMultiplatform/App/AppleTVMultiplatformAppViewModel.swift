@@ -17,10 +17,13 @@ final class AppleTVMultiplatformAppViewModel {
 
     func handleIncomingFile(url: URL) -> Bool {
         let isSecureScoped = url.startAccessingSecurityScopedResource()
+        var didImport = false
         defer {
             if isSecureScoped {
                 url.stopAccessingSecurityScopedResource()
-            } else {
+            } else if didImport {
+                // Only clean up the inbox copy after a successful import; on
+                // failure keep the file so the user can retry.
                 try? FileManager.default.removeItem(at: url)
             }
         }
@@ -49,7 +52,8 @@ final class AppleTVMultiplatformAppViewModel {
                 )
             }
             try databaseService.mainContext.save()
-            logger.info("Playlist added", private: decoded.name!)
+            logger.info("Playlist added")
+            didImport = true
             return true
         } catch {
             logger.error(error)

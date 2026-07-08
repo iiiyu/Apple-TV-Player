@@ -67,10 +67,16 @@ actor ProgramGuideParser {
     private lazy var unarchiver: Unarchiver = .init(onProgress: { [weak self] steps, step, unarchiver in
         guard let self = self else { return }
         Task {
-            await self.set(steps: steps)
-            await self.set(step: step)
+            await self.apply(steps: steps, step: step)
         }
     })
+
+    // Applies a progress event atomically so observers never see the steps
+    // list and the current step from two different events.
+    private func apply(steps: [Unarchiver.Progress], step: Unarchiver.Progress) {
+        set(steps: steps)
+        set(step: step)
+    }
     private let dateFormatter = ManualDateFormatter()
     private let onProgress: @Sendable ([Progress], Progress, isolated ProgramGuideParser) -> Void
     private var progressSteps: [Progress] = []
@@ -98,7 +104,10 @@ actor ProgramGuideParser {
 
     func parse(xmlURL: URL) async throws -> [ProgramGuide] {
         var needsComplete = false
-        if progress == .start {
+        // `.complete` means a previous run finished and this is a fresh
+        // parse; without treating it as a start, reused parsers would emit
+        // `.parsing` and never `.complete`, leaving progress UIs stuck.
+        if progress == .start || progress == .complete {
             progressSteps = [.start, .parsing, .complete]
             needsComplete = true
             progress = .start
@@ -116,11 +125,49 @@ private extension ProgramGuideParser {
     private func loadXMLString(from url: URL) async throws -> String {
         let data = try await loadData(from: url)
 
-        guard let xmlString = String(data: data, encoding: .utf8) else {
-            throw ParserError.invalidXML
+        if let xmlString = String(data: data, encoding: .utf8) {
+            return xmlString
         }
 
-        return xmlString
+        // Non-UTF-8 guides (e.g. windows-1251 feeds) declare their encoding
+        // in the XML prolog. Decode with it, then drop the declaration so
+        // downstream parsing treats the string as the UTF-8 it now is.
+        for encoding in [Self.declaredEncoding(in: data), .isoLatin1].compactMap({ $0 }) {
+            if let xmlString = String(data: data, encoding: encoding) {
+                return Self.removingEncodingDeclaration(from: xmlString)
+            }
+        }
+
+        throw ParserError.invalidXML
+    }
+
+    private static func declaredEncoding(in data: Data) -> String.Encoding? {
+        guard let prolog = String(data: data.prefix(200), encoding: .isoLatin1),
+              let match = prolog.range(
+                of: #"encoding=["'][^"']+["']"#,
+                options: [.regularExpression, .caseInsensitive]
+              ) else {
+            return nil
+        }
+        let name = prolog[match]
+            .dropFirst("encoding=\"".count)
+            .dropLast()
+        let cfEncoding = CFStringConvertIANACharSetNameToEncoding(String(name) as CFString)
+        guard cfEncoding != kCFStringEncodingInvalidId else {
+            return nil
+        }
+        return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cfEncoding))
+    }
+
+    private static func removingEncodingDeclaration(from xmlString: String) -> String {
+        guard let match = xmlString.range(
+            of: #"\s*encoding=["'][^"']+["']"#,
+            options: [.regularExpression, .caseInsensitive],
+            range: xmlString.startIndex..<(xmlString.index(xmlString.startIndex, offsetBy: 200, limitedBy: xmlString.endIndex) ?? xmlString.endIndex)
+        ) else {
+            return xmlString
+        }
+        return xmlString.replacingCharacters(in: match, with: "")
     }
 
     private func loadData(from url: URL) async throws -> Data {
@@ -261,28 +308,43 @@ private extension ProgramGuideParser {
 
 nonisolated private struct ManualDateFormatter {
 
+    // XMLTV dates must resolve in the Gregorian calendar regardless of the
+    // device calendar (e.g. Buddhist on Thai locales).
+    private let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }()
+
     func date(from string: String) -> Date? {
         // Format: "20260218135322 +0000"
         // Positions: YYYYMMDDHHMMSS +HHMM
-        guard string.count >= 14 else { return nil }
-        
-        let yearStart = string.startIndex
-        let yearEnd = string.index(yearStart, offsetBy: 4)
-        let monthEnd = string.index(yearEnd, offsetBy: 2)
-        let dayEnd = string.index(monthEnd, offsetBy: 2)
-        let hourEnd = string.index(dayEnd, offsetBy: 2)
-        let minuteEnd = string.index(hourEnd, offsetBy: 2)
-        let secondEnd = string.index(minuteEnd, offsetBy: 2)
-        
-        guard let year = Int(string[yearStart..<yearEnd]),
-              let month = Int(string[yearEnd..<monthEnd]),
-              let day = Int(string[monthEnd..<dayEnd]),
-              let hour = Int(string[dayEnd..<hourEnd]),
-              let minute = Int(string[hourEnd..<minuteEnd]),
-              let second = Int(string[minuteEnd..<secondEnd]) else {
+        // XMLTV allows truncated timestamps ("202602181400 +0300") and an
+        // omitted offset (then UTC is assumed).
+        let trimmed = string.trimmingCharacters(in: .whitespaces)
+        let digits = trimmed.prefix { $0.isASCII && $0.isNumber }
+        guard digits.count >= 8, digits.count <= 14, digits.count.isMultiple(of: 2) else {
             return nil
         }
-        
+        let padded = String(digits).padding(toLength: 14, withPad: "0", startingAt: 0)
+
+        let yearStart = padded.startIndex
+        let yearEnd = padded.index(yearStart, offsetBy: 4)
+        let monthEnd = padded.index(yearEnd, offsetBy: 2)
+        let dayEnd = padded.index(monthEnd, offsetBy: 2)
+        let hourEnd = padded.index(dayEnd, offsetBy: 2)
+        let minuteEnd = padded.index(hourEnd, offsetBy: 2)
+        let secondEnd = padded.index(minuteEnd, offsetBy: 2)
+
+        guard let year = Int(padded[yearStart..<yearEnd]),
+              let month = Int(padded[yearEnd..<monthEnd]),
+              let day = Int(padded[monthEnd..<dayEnd]),
+              let hour = Int(padded[dayEnd..<hourEnd]),
+              let minute = Int(padded[hourEnd..<minuteEnd]),
+              let second = Int(padded[minuteEnd..<secondEnd]) else {
+            return nil
+        }
+
         var components = DateComponents()
         components.year = year
         components.month = month
@@ -290,8 +352,21 @@ nonisolated private struct ManualDateFormatter {
         components.hour = hour
         components.minute = minute
         components.second = second
-        components.timeZone = TimeZone(secondsFromGMT: 0)
-        
-        return Calendar.current.date(from: components)
+        components.timeZone = timeZone(from: trimmed[digits.endIndex...])
+
+        return calendar.date(from: components)
+    }
+
+    private func timeZone(from suffix: Substring) -> TimeZone {
+        let utc = TimeZone(secondsFromGMT: 0)!
+        let offset = suffix.trimmingCharacters(in: .whitespaces)
+        guard offset.count == 5,
+              let sign = offset.first, sign == "+" || sign == "-",
+              let hours = Int(offset.dropFirst().prefix(2)),
+              let minutes = Int(offset.suffix(2)) else {
+            return utc
+        }
+        let seconds = (hours * 3600 + minutes * 60) * (sign == "-" ? -1 : 1)
+        return TimeZone(secondsFromGMT: seconds) ?? utc
     }
 }

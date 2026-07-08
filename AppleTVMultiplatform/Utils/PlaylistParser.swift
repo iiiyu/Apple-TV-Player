@@ -18,14 +18,17 @@ actor PlaylistParser {
         let tvgID: String?
         let tvgName: String?
         let groupTitle: String?
-        var id: String { "\(title):\(url)" }
+        // Length-prefix the title so the id can't be forged by a colon inside
+        // a title/url — e.g. ("HD:1","x") and ("HD","1:x") stay distinct.
+        var id: String { "\(title.count):\(title)|\(url)" }
 
         static func == (lhs: Stream, rhs: Stream) -> Bool {
-            return lhs.id == rhs.id
+            lhs.title == rhs.title && lhs.url == rhs.url
         }
 
         func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
+            hasher.combine(title)
+            hasher.combine(url)
         }
     }
 
@@ -58,21 +61,38 @@ actor PlaylistParser {
         let tvgID: String?
         let tvgName: String?
         let groupTitle: String?
+        // HTTP headers from #EXTVLCOPT lines, folded into the URL so the
+        // playback engines send them.
+        var headers: [String: String] = [:]
 
         func resolve(url: String) -> Stream {
             Stream(
                 title: title,
-                url: url,
+                url: Self.applyingHeaders(headers, to: url),
                 tvgLogo: tvgLogo,
                 tvgID: tvgID,
                 tvgName: tvgName,
                 groupTitle: groupTitle
             )
         }
+
+        // Appends captured headers as pipe-options unless the URL already
+        // carries an options suffix.
+        private static func applyingHeaders(_ headers: [String: String], to url: String) -> String {
+            guard !headers.isEmpty, !url.contains("|") else {
+                return url
+            }
+            let options = headers
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: "&")
+            return "\(url)|\(options)"
+        }
     }
 
     private static let m3uHeader = "#EXTM3U"
     private static let streamInfoHeader = "#EXTINF:"
+    private static let vlcOptionHeader = "#EXTVLCOPT:"
     private static let attributePattern = #"([A-Za-z0-9-]+)=("([^"]*)"|([^\s,]+))"#
     @ObservationIgnored @Injected(\.logger) private var logger
 
@@ -120,6 +140,13 @@ actor PlaylistParser {
 
                 if line.hasPrefix(Self.streamInfoHeader) {
                     pendingStream = Self.buildStream(from: line)
+                    continue
+                }
+
+                if line.hasPrefix(Self.vlcOptionHeader) {
+                    if let (name, value) = Self.parseVLCOption(from: line) {
+                        pendingStream?.headers[name] = value
+                    }
                     continue
                 }
 
@@ -180,6 +207,27 @@ actor PlaylistParser {
             tvgName: attributes["tvg-name"],
             groupTitle: attributes["group-title"]
         )
+    }
+
+    private static func parseVLCOption(from line: String) -> (name: String, value: String)? {
+        let body = String(line.dropFirst(vlcOptionHeader.count))
+        let parts = body.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+
+        let key = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+        let value = parts[1].trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return nil }
+
+        switch key {
+        case "http-user-agent":
+            return ("User-Agent", value)
+        case "http-referrer", "http-referer":
+            return ("Referer", value)
+        case "http-origin":
+            return ("Origin", value)
+        default:
+            return nil
+        }
     }
 
     private static func splitMetadataAndTitle(in line: String) -> (metadata: String, title: String) {

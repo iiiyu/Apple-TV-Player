@@ -23,6 +23,13 @@ final class StreamViewModel {
         }
     }
 
+    /// A pure, time-derived view of the guide. Computed on demand during a
+    /// TimelineView tick so nothing mutates observable state inside `body`.
+    struct ProgramSnapshot: Equatable, Sendable {
+        var displayed: [DisplayProgram] = []
+        var originCurrent: DisplayProgram?
+    }
+
     @ObservationIgnored @Injected(\.playlistService) private var playlistService
     @ObservationIgnored @Injected(\.logger) private var logger
     @ObservationIgnored private let timeFormatter: DateFormatter
@@ -32,8 +39,6 @@ final class StreamViewModel {
     let title: String
 
     private(set) var programs: [ProgramGuide.Program] = []
-    private(set) var displayProgram: [DisplayProgram] = []
-    private(set) var originStreamCurrentProgram: DisplayProgram?
     private(set) var didLoadPrograms = false
     private(set) var mediaInfo: StreamMediaInfo?
     private(set) var isLoadingMediaInfo = false
@@ -86,10 +91,9 @@ final class StreamViewModel {
         return !programs.isEmpty
     }
 
-    func displayedPrograms(at now: Date, stream: PlaylistParser.Stream) {
+    func displayedPrograms(at now: Date, stream: PlaylistParser.Stream) -> ProgramSnapshot {
         guard !programs.isEmpty else {
-            displayProgram = []
-            return
+            return ProgramSnapshot()
         }
 
         let previousPrograms = Array(programs.filter({ $0.stop <= now }).suffix(2))
@@ -99,26 +103,29 @@ final class StreamViewModel {
             $0.start > now && $0.start < futureWindowEnd
         }
         guard let currentProgram else {
-            displayProgram = []
-            return
-        }
-        if stream == self.stream {
-            self.originStreamCurrentProgram = .init(
-                program: currentProgram,
-                state: programState(for: currentProgram, at: now),
-                text: formattedText(for: currentProgram),
-                progress: progress(for: currentProgram, at: now)
+            // A gap between programs: no "now" entry, but upcoming programs
+            // should still be shown, and the origin-stream banner cleared.
+            return ProgramSnapshot(
+                displayed: (previousPrograms + futurePrograms).map { displayProgram(for: $0, at: now) }
             )
         }
-        displayProgram = (previousPrograms + [currentProgram].compactMap({ $0 }) + futurePrograms).map {
-            let state = programState(for: $0, at: now)
-            return DisplayProgram(
-                program: $0,
-                state: state,
-                text: formattedText(for: $0),
-                progress: state == .now ? progress(for: $0, at: now) : nil
-            )
-        }
+
+        let originCurrent: DisplayProgram? = stream == self.stream
+            ? displayProgram(for: currentProgram, at: now)
+            : nil
+        let displayed = (previousPrograms + [currentProgram] + futurePrograms)
+            .map { displayProgram(for: $0, at: now) }
+        return ProgramSnapshot(displayed: displayed, originCurrent: originCurrent)
+    }
+
+    private func displayProgram(for program: ProgramGuide.Program, at now: Date) -> DisplayProgram {
+        let state = programState(for: program, at: now)
+        return DisplayProgram(
+            program: program,
+            state: state,
+            text: formattedText(for: program),
+            progress: state == .now ? progress(for: program, at: now) : nil
+        )
     }
 
     func progress(for program: ProgramGuide.Program, at now: Date) -> Double {

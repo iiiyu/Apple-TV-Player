@@ -87,15 +87,79 @@ enum SGPlayerCompatibility {
     }
 }
 
+private struct SGPlayerSource: Equatable {
+
+    let streamURL: StreamURL
+
+    var url: URL { streamURL.url }
+    var headers: [String: String] { streamURL.headers }
+
+    init?(urlString: String) {
+        guard let streamURL = StreamURL(urlString) else { return nil }
+        self.streamURL = streamURL
+    }
+
+    private init(streamURL: StreamURL) {
+        self.streamURL = streamURL
+    }
+
+    func replacingURL(_ url: URL) -> Self {
+        Self(streamURL: streamURL.replacingURL(url))
+    }
+
+    var demuxerOptions: [String: Any] {
+        let userAgent = streamURL.headerValue(named: "User-Agent") ?? Self.defaultUserAgent
+        var options: [String: Any] = [
+            "reconnect": 1,
+            "reconnect_streamed": 1,
+            "reconnect_delay_max": 5,
+            "timeout": 20 * 1_000_000,
+            "rw_timeout": 20 * 1_000_000,
+            "user-agent": userAgent,
+            "headers": httpHeaderString(userAgent: userAgent)
+        ]
+
+        if let referer = streamURL.headerValue(named: "Referer") {
+            options["referer"] = referer
+        }
+        return options
+    }
+
+    private func httpHeaderString(userAgent: String) -> String {
+        var headerLines: [(String, String)] = [
+            ("User-Agent", userAgent),
+            ("Accept", "*/*"),
+            ("Connection", "keep-alive")
+        ]
+
+        for (key, value) in headers where key.compare("User-Agent", options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame {
+            headerLines.append((key, value))
+        }
+
+        return headerLines
+            .map { "\($0.0): \(StreamURL.sanitizedHeaderValue($0.1))" }
+            .joined(separator: "\r\n") + "\r\n"
+    }
+
+    private static let defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+}
+
 final class SGPlayerCompatibilitySession {
 
     private let player: NSObject
     private let idlePreventionToken = PlaybackIdlePreventionToken("sgplayer-\(UUID().uuidString)")
-    private var loadedURL: URL?
+    private var requestedURLString: String?
+    private var originalSource: SGPlayerSource?
+    private var loadedSource: SGPlayerSource?
     private var onPlaybackError: ((String?) -> Void)?
     private var onPlaybackStateChange: ((Bool) -> Void)?
     private var observer: NSObjectProtocol?
     private var isIdlePreventionActive = false
+    private var didAttemptHLSFallback = false
+    private weak var attachedView: SGHostView?
+    private var attachedViewPriority = 0
+    private weak var primaryView: SGHostView?
+    private var isPlaybackRequested = true
 
     init?(urlString: String, onPlaybackError: ((String?) -> Void)? = nil) {
         guard let playerClass = SGPlayerRuntime.playerClass as? NSObject.Type else {
@@ -105,7 +169,10 @@ final class SGPlayerCompatibilitySession {
         self.player = playerClass.init()
         self.onPlaybackError = onPlaybackError
         observePlayerInfo()
-        replace(with: urlString)
+        // Opening the stream is deferred to the first replace()/attach();
+        // SwiftUI evaluates @State initial values on every view-struct
+        // construction and discards the extras, so an eager open here would
+        // spawn abandoned network connections on each parent re-render.
     }
 
     deinit {
@@ -127,18 +194,34 @@ final class SGPlayerCompatibilitySession {
         reportPlaybackState()
     }
 
-    func replace(with urlString: String) {
-        guard let url = URL(string: urlString) else {
+    func replace(with urlString: String, forceReload: Bool = false) {
+        guard forceReload || requestedURLString != urlString else { return }
+        guard let source = SGPlayerSource(urlString: urlString) else {
             reportPlaybackError(String(localized: "The channel URL is invalid."))
             return
         }
 
-        guard loadedURL != url else { return }
-        loadedURL = url
-        reportPlaybackError(nil)
+        requestedURLString = urlString
+        originalSource = source
+        didAttemptHLSFallback = false
+        if forceReload {
+            // A mid-stream failure leaves `loadedSource` set to the same
+            // parsed source; without clearing it, open()'s dedupe guard
+            // would turn a user-initiated retry into a no-op.
+            loadedSource = nil
+        }
+        open(source, allowsFallback: true)
+    }
 
+    private func open(_ source: SGPlayerSource, allowsFallback: Bool) {
+        guard loadedSource != source else { return }
+
+        loadedSource = source
+        reportPlaybackError(nil)
+        configureDemuxerOptions(for: source)
         let selector = NSSelectorFromString("replaceWithURL:")
         guard player.responds(to: selector) else {
+            loadedSource = nil
             reportPlaybackError(String(localized: "SGPlayer is not compatible with this build."))
             return
         }
@@ -146,23 +229,63 @@ final class SGPlayerCompatibilitySession {
         let implementation = player.method(for: selector)
         typealias ReplaceMessage = @convention(c) (AnyObject, Selector, NSURL) -> Bool
         let replace = unsafeBitCast(implementation, to: ReplaceMessage.self)
-        if !replace(player, selector, url as NSURL) {
+        if !replace(player, selector, source.url as NSURL) {
+            loadedSource = nil
+            if allowsFallback, switchToHLSFallback() {
+                return
+            }
             reportPlaybackError(String(localized: "SGPlayer could not open this channel."))
         }
     }
 
-    fileprivate func attach(to view: SGHostView) {
+    fileprivate func attach(to view: SGHostView, priority: Int = 0) {
         configureHostView(view)
-        renderer()?.setValue(view, forKey: "view")
-        renderer()?.setValue(NSNumber(value: 1), forKey: "scalingMode")
-        play()
+        // Remember the inline (priority 0) surface so the renderer can be
+        // handed back to it when a higher-priority full-screen surface goes
+        // away.
+        if priority == 0 {
+            primaryView = view
+        }
+        let renderer = renderer()
+        if attachedView !== view {
+            // While a full-screen surface holds the renderer, SwiftUI keeps
+            // updating the covered inline surface; a lower-priority attach
+            // must not steal the video back into the hidden view.
+            if attachedView != nil, priority < attachedViewPriority {
+                resumeIfPlaybackRequested()
+                return
+            }
+            attachedView = view
+            attachedViewPriority = priority
+            renderer?.setValue(view, forKey: "view")
+        } else {
+            attachedViewPriority = priority
+        }
+        renderer?.setValue(NSNumber(value: 1), forKey: "scalingMode")
+        resumeIfPlaybackRequested()
     }
 
-    func detach() {
+    fileprivate func detach(from view: SGHostView? = nil) {
+        if let view {
+            if primaryView === view {
+                primaryView = nil
+            }
+            if attachedView !== view {
+                return
+            }
+        }
+        attachedView = nil
+        attachedViewPriority = 0
         renderer()?.setValue(nil, forKey: "view")
+        // Hand the renderer back to the still-alive inline surface so leaving
+        // a full-screen surface doesn't leave the video detached (audio-only).
+        if let primaryView, primaryView !== view {
+            attach(to: primaryView, priority: 0)
+        }
     }
 
     func play() {
+        isPlaybackRequested = true
         reportPlaybackError(nil)
         sendBooleanMessage("play")
         updateIdlePrevention(isPlaying: true)
@@ -170,8 +293,19 @@ final class SGPlayerCompatibilitySession {
     }
 
     func pause() {
+        isPlaybackRequested = false
         sendBooleanMessage("pause")
         updateIdlePrevention(isPlaying: false)
+        reportPlaybackState()
+    }
+
+    // Called from SwiftUI view updates, which re-run on every render tick;
+    // unlike play() this must not override a user-initiated pause or clear
+    // a pending playback error.
+    private func resumeIfPlaybackRequested() {
+        guard isPlaybackRequested else { return }
+        sendBooleanMessage("play")
+        updateIdlePrevention(isPlaying: true)
         reportPlaybackState()
     }
 
@@ -218,7 +352,40 @@ final class SGPlayerCompatibilitySession {
 
     private func reportCurrentErrorIfNeeded() {
         guard let error = objectMessage("error") as? NSError else { return }
+        if switchToHLSFallback() {
+            return
+        }
         reportPlaybackError(String(format: String(localized: "SGPlayer failed: %@"), error.localizedDescription))
+    }
+
+    @discardableResult
+    private func switchToHLSFallback() -> Bool {
+        guard !didAttemptHLSFallback,
+              let originalSource,
+              let fallbackURL = StreamPlayerController.hlsFallbackURL(for: originalSource.url) else {
+            return false
+        }
+
+        didAttemptHLSFallback = true
+        let shouldResume = isPlaying
+        open(originalSource.replacingURL(fallbackURL), allowsFallback: false)
+        if shouldResume {
+            play()
+        }
+        return true
+    }
+
+    private func configureDemuxerOptions(for source: SGPlayerSource) {
+        guard let options = objectMessage("options") as? NSObject,
+              let demuxer = objectMessage("demuxer", on: options) as? NSObject else {
+            return
+        }
+
+        var mergedOptions = objectMessage("options", on: demuxer) as? [String: Any] ?? [:]
+        for (key, value) in source.demuxerOptions {
+            mergedOptions[key] = value
+        }
+        setObjectMessage("setOptions:", value: mergedOptions as NSDictionary, on: demuxer)
     }
 
     private func reportPlaybackState() {
@@ -271,13 +438,27 @@ final class SGPlayerCompatibilitySession {
     }
 
     private func objectMessage(_ selectorName: String) -> AnyObject? {
-        let selector = NSSelectorFromString(selectorName)
-        guard player.responds(to: selector) else { return nil }
+        objectMessage(selectorName, on: player)
+    }
 
-        let implementation = player.method(for: selector)
+    private func objectMessage(_ selectorName: String, on object: NSObject?) -> AnyObject? {
+        let selector = NSSelectorFromString(selectorName)
+        guard let object, object.responds(to: selector) else { return nil }
+
+        let implementation = object.method(for: selector)
         typealias ObjectMessage = @convention(c) (AnyObject, Selector) -> AnyObject?
         let message = unsafeBitCast(implementation, to: ObjectMessage.self)
-        return message(player, selector)
+        return message(object, selector)
+    }
+
+    private func setObjectMessage(_ selectorName: String, value: AnyObject?, on object: NSObject) {
+        let selector = NSSelectorFromString(selectorName)
+        guard object.responds(to: selector) else { return }
+
+        let implementation = object.method(for: selector)
+        typealias SetObjectMessage = @convention(c) (AnyObject, Selector, AnyObject?) -> Void
+        let message = unsafeBitCast(implementation, to: SetObjectMessage.self)
+        message(object, selector, value)
     }
 
     private func doubleMessage(_ selectorName: String, on object: NSObject?) -> Double? {
@@ -323,28 +504,31 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
     let urlString: String
     let widthMultiplier: CGFloat
     let sharedSession: SGPlayerCompatibilitySession?
+    let attachPriority: Int
     let onPlaybackError: (String?) -> Void
 
     init(
         urlString: String,
         widthMultiplier: CGFloat = 1,
         sharedSession: SGPlayerCompatibilitySession? = nil,
+        attachPriority: Int = 0,
         onPlaybackError: @escaping (String?) -> Void
     ) {
         self.urlString = urlString
         self.widthMultiplier = widthMultiplier
         self.sharedSession = sharedSession
+        self.attachPriority = attachPriority
         self.onPlaybackError = onPlaybackError
     }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        context.coordinator.attach(to: view, urlString: urlString, onPlaybackError: onPlaybackError)
+        context.coordinator.attach(to: view, urlString: urlString, priority: attachPriority, onPlaybackError: onPlaybackError)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.attach(to: nsView, urlString: urlString, onPlaybackError: onPlaybackError)
+        context.coordinator.attach(to: nsView, urlString: urlString, priority: attachPriority, onPlaybackError: onPlaybackError)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -352,7 +536,7 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.detach()
+        coordinator.detach(from: nsView)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
@@ -369,7 +553,7 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
             self.session = session
         }
 
-        func attach(to view: NSView, urlString: String, onPlaybackError: @escaping (String?) -> Void) {
+        func attach(to view: NSView, urlString: String, priority: Int, onPlaybackError: @escaping (String?) -> Void) {
             guard let session else {
                 DispatchQueue.main.async {
                     onPlaybackError(String(localized: "SGPlayer is not available in this build."))
@@ -379,12 +563,11 @@ struct SGPlayerCompatibilityView: NSViewRepresentable {
 
             session.setPlaybackErrorHandler(onPlaybackError)
             session.replace(with: urlString)
-            session.attach(to: view)
+            session.attach(to: view, priority: priority)
         }
 
-        func detach() {
-            session?.pause()
-            session?.detach()
+        func detach(from view: NSView) {
+            session?.detach(from: view)
         }
     }
 }
@@ -394,28 +577,31 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
     let urlString: String
     let widthMultiplier: CGFloat
     let sharedSession: SGPlayerCompatibilitySession?
+    let attachPriority: Int
     let onPlaybackError: (String?) -> Void
 
     init(
         urlString: String,
         widthMultiplier: CGFloat = 1,
         sharedSession: SGPlayerCompatibilitySession? = nil,
+        attachPriority: Int = 0,
         onPlaybackError: @escaping (String?) -> Void
     ) {
         self.urlString = urlString
         self.widthMultiplier = widthMultiplier
         self.sharedSession = sharedSession
+        self.attachPriority = attachPriority
         self.onPlaybackError = onPlaybackError
     }
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
-        context.coordinator.attach(to: view, urlString: urlString, onPlaybackError: onPlaybackError)
+        context.coordinator.attach(to: view, urlString: urlString, priority: attachPriority, onPlaybackError: onPlaybackError)
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.attach(to: uiView, urlString: urlString, onPlaybackError: onPlaybackError)
+        context.coordinator.attach(to: uiView, urlString: urlString, priority: attachPriority, onPlaybackError: onPlaybackError)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -423,7 +609,7 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-        coordinator.detach()
+        coordinator.detach(from: uiView)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
@@ -440,7 +626,7 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
             self.session = session
         }
 
-        func attach(to view: UIView, urlString: String, onPlaybackError: @escaping (String?) -> Void) {
+        func attach(to view: UIView, urlString: String, priority: Int, onPlaybackError: @escaping (String?) -> Void) {
             guard let session else {
                 DispatchQueue.main.async {
                     onPlaybackError(String(localized: "SGPlayer is not available in this build."))
@@ -450,12 +636,11 @@ struct SGPlayerCompatibilityView: UIViewRepresentable {
 
             session.setPlaybackErrorHandler(onPlaybackError)
             session.replace(with: urlString)
-            session.attach(to: view)
+            session.attach(to: view, priority: priority)
         }
 
-        func detach() {
-            session?.pause()
-            session?.detach()
+        func detach(from view: UIView) {
+            session?.detach(from: view)
         }
     }
 }

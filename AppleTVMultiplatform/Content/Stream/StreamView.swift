@@ -2,6 +2,12 @@ import AVKit
 import FactoryKit
 import SwiftUI
 import Combine
+#if os(iOS)
+import UIKit
+#endif
+#if os(macOS)
+import AppKit
+#endif
 
 // Some members of my family used to old layout on Apple TV.
 private let homeTvOSStreamLayout = false
@@ -18,8 +24,11 @@ struct StreamView: View {
     @State private var sgPlayer: SGPlayerCompatibilitySession?
     @State private var isSGPlayerPlaying = true
     @State private var sgPlayerVolume = 1.0
-#if !os(tvOS)
+#if os(iOS)
     @State private var showSGPlayerFullScreen = false
+#endif
+#if os(macOS)
+    @State private var macFullScreen = MacSGPlayerFullScreenController()
 #endif
 #if os(tvOS)
     @State private var showFullScreen = false
@@ -65,25 +74,25 @@ struct StreamView: View {
         ZStack {
             TimelineView(.periodic(from: Date(), by: 60)) { context in
 #if os(tvOS)
-                let _ = viewModel.displayedPrograms(at: context.date, stream: focusedStream ?? viewModel.stream)
+                let snapshot = viewModel.displayedPrograms(at: context.date, stream: focusedStream ?? viewModel.stream)
 #else
-                let _ = viewModel.displayedPrograms(at: context.date, stream: viewModel.stream)
+                let snapshot = viewModel.displayedPrograms(at: context.date, stream: viewModel.stream)
 #endif
 
                 VStack(alignment: .leading, spacing: 16) {
 #if os(tvOS)
                     if !homeTvOSStreamLayout {
-                        headerView(now: context.date)
+                        headerView(now: context.date, snapshot: snapshot)
                             .padding(.trailing, 22)
                         videoPlayer()
-                        programList()
+                        programList(snapshot: snapshot)
                             .id(reloadProgramGuide)
                     } else {
                         ZStack {
                             VStack {
-                                headerView(now: context.date)
+                                headerView(now: context.date, snapshot: snapshot)
                                     .padding(.trailing, 22)
-                                programList()
+                                programList(snapshot: snapshot)
                                     .id(reloadProgramGuide)
                                     .padding(.bottom, 24)
                             }
@@ -98,7 +107,7 @@ struct StreamView: View {
                     }
 #else
                     videoPlayer()
-                    programList()
+                    programList(snapshot: snapshot)
 #endif
                 }
                 .padding([.leading, .trailing, .bottom])
@@ -142,27 +151,7 @@ struct StreamView: View {
         .onChange(of: useSGPlayerCompatibility) {
             activateSelectedPlaybackEngine()
         }
-#if os(macOS)
-        .sheet(isPresented: $showSGPlayerFullScreen, onDismiss: {
-            activateSelectedPlaybackEngine()
-        }) {
-            ZStack {
-                sgPlayerSurface(
-                    isFullScreen: true,
-                    fullScreenSystemImage: "xmark",
-                    fullScreenAccessibilityLabel: "Close Player"
-                ) {
-                    showSGPlayerFullScreen = false
-                }
-                .frame(minWidth: 960, minHeight: 540)
-
-                if let playbackErrorMessage {
-                    playbackErrorView(playbackErrorMessage)
-                }
-            }
-            .background(.black)
-        }
-#elseif os(iOS)
+#if os(iOS)
         .fullScreenCover(isPresented: $showSGPlayerFullScreen, onDismiss: {
             activateSelectedPlaybackEngine()
         }) {
@@ -181,6 +170,7 @@ struct StreamView: View {
                 }
             }
             .background(.black)
+            .modifier(IOSVideoFullScreenOrientationModifier())
         }
 #endif
 #if os(tvOS)
@@ -285,11 +275,11 @@ struct StreamView: View {
     }
 
 #if os(tvOS)
-    private func headerView(now: Date) -> some View {
+    private func headerView(now: Date, snapshot: StreamViewModel.ProgramSnapshot) -> some View {
         HStack {
             if !homeTvOSStreamLayout,
                focusedStream != viewModel.stream,
-               let currentProgram = viewModel.originStreamCurrentProgram {
+               let currentProgram = snapshot.originCurrent {
                 Text(currentProgram.text)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -411,6 +401,27 @@ struct StreamView: View {
 #endif
     }
 
+#if os(macOS)
+    private func enterMacSGPlayerFullScreen() {
+        guard let sgPlayer else { return }
+        // Present the video in its own full-screen window (the whole playback
+        // picture, not the app window with its sidebar/list). The shared
+        // SGPlayer session's renderer moves to that window via attach
+        // priority, and returns to this inline surface when it closes.
+        macFullScreen.present(
+            session: sgPlayer,
+            urlString: viewModel.stream.url,
+            volume: sgPlayerVolume,
+            onPlaybackError: handlePlaybackError,
+            onClose: {
+                isSGPlayerPlaying = true
+                reloadCurrentProgram = .init()
+                activateSelectedPlaybackEngine()
+            }
+        )
+    }
+#endif
+
     private func videoPlayer() -> some View {
         ZStack {
             platformVideoPlayer()
@@ -425,12 +436,18 @@ struct StreamView: View {
 #if os(macOS)
         if useSGPlayerCompatibility {
             sgPlayerSurface {
-                showSGPlayerFullScreen = true
+                enterMacSGPlayerFullScreen()
+            }
+            .onDisappear {
+                // Tear down the detached full-screen window if the stream view
+                // goes away while it is open.
+                macFullScreen.dismiss()
             }
         } else {
             MacOsPlayerView(
                 urlString: viewModel.stream.url,
-                onPlaybackError: handlePlaybackError
+                onPlaybackError: handlePlaybackError,
+                onExitFullScreen: { reloadCurrentProgram = .init() }
             )
             .id(playbackReloadID)
         }
@@ -475,10 +492,11 @@ struct StreamView: View {
         fullScreenAction: (() -> Void)? = nil
     ) -> some View {
         if let sgPlayer {
-            SGPlayerSurface(
+            let surface = SGPlayerSurface(
                 urlString: viewModel.stream.url,
                 widthMultiplier: widthMultiplier,
                 session: sgPlayer,
+                attachPriority: isFullScreen ? 1 : 0,
                 onPlaybackError: handlePlaybackError,
                 isPlaying: $isSGPlayerPlaying,
                 volume: $sgPlayerVolume,
@@ -489,6 +507,19 @@ struct StreamView: View {
                 fullScreenAction: fullScreenAction
             )
             .id(playbackReloadID)
+#if os(iOS)
+            // Inline, pin the player to a 16:9 box at the top; without this the
+            // surface stretches to fill the detail area, leaving a tall black
+            // box with the controls floating in it.
+            if isFullScreen {
+                surface
+            } else {
+                surface
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            }
+#else
+            surface
+#endif
         } else {
             ContentUnavailableView {
                 Label("Unable to Play Channel", systemImage: "play.slash")
@@ -507,11 +538,11 @@ struct StreamView: View {
             Button("Retry") {
                 retryPlayback()
             }
+            .buttonStyle(.glassProminent)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
 
     private func handlePlaybackError(_ message: String?) {
@@ -561,7 +592,7 @@ struct StreamView: View {
             tvOSPlayer.pause()
 #endif
             playbackReloadID = UUID()
-            sgPlayer?.replace(with: viewModel.stream.url)
+            sgPlayer?.replace(with: viewModel.stream.url, forceReload: true)
             sgPlayer?.volume = sgPlayerVolume
             sgPlayer?.play()
             isSGPlayerPlaying = true
@@ -604,8 +635,8 @@ struct StreamView: View {
     }
 
     @ViewBuilder
-    private func programList() -> some View {
-        if viewModel.didLoadPrograms, viewModel.displayProgram.isEmpty {
+    private func programList(snapshot: StreamViewModel.ProgramSnapshot) -> some View {
+        if viewModel.didLoadPrograms, snapshot.displayed.isEmpty {
             ContentUnavailableView(
                 "No Program Guide",
                 systemImage: "calendar.badge.exclamationmark",
@@ -616,7 +647,7 @@ struct StreamView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(viewModel.displayProgram) { displayedProgram in
+                    ForEach(snapshot.displayed) { displayedProgram in
 #if os(tvOS)
                     Button {
                     } label: {
@@ -714,9 +745,9 @@ private struct StreamMediaInfoView: View {
                 ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
                     Text(badge)
                         .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.thinMaterial, in: Capsule())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .glassEffect(.regular, in: .capsule)
                 }
             }
         }
@@ -750,9 +781,9 @@ private struct MediaInfoSectionView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .glassEffect(.regular, in: .rect(cornerRadius: 18))
             }
         }
     }
@@ -763,6 +794,7 @@ private struct SGPlayerSurface: View {
     let urlString: String
     let widthMultiplier: CGFloat
     let session: SGPlayerCompatibilitySession
+    let attachPriority: Int
     let onPlaybackError: (String?) -> Void
     @Binding var isPlaying: Bool
     @Binding var volume: Double
@@ -778,6 +810,7 @@ private struct SGPlayerSurface: View {
                 urlString: urlString,
                 widthMultiplier: widthMultiplier,
                 sharedSession: session,
+                attachPriority: attachPriority,
                 onPlaybackError: onPlaybackError
             )
             .background(.black)
@@ -861,10 +894,6 @@ private struct SGPlayerControls: View {
             }
             .accessibilityLabel(isPlaying ? Text("Pause") : Text("Play"))
 
-            Text("SGPlayer")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
             Spacer(minLength: 8)
 
             Button {
@@ -889,7 +918,7 @@ private struct SGPlayerControls: View {
         .controlSize(controlSize)
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .glassEffect(.regular, in: .rect(cornerRadius: 26))
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, bottomPadding)
     }
@@ -1021,34 +1050,167 @@ private struct SGPlayerControls: View {
 }
 
 #if os(macOS)
+/// Presents the SGPlayer video in a dedicated full-screen window. The video is
+/// what fills the screen (not the app window with its sidebar and channel
+/// list); the shared SGPlayer session's renderer moves here via attach priority
+/// and is handed back to the inline surface when this window closes.
+@MainActor
+final class MacSGPlayerFullScreenController: NSObject, NSWindowDelegate {
+
+    private var window: NSWindow?
+    private var onClose: (() -> Void)?
+    private var isClosing = false
+
+    func present(
+        session: SGPlayerCompatibilitySession,
+        urlString: String,
+        volume: Double,
+        onPlaybackError: @escaping (String?) -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        guard window == nil else { return }
+        self.onClose = onClose
+
+        let content = MacSGPlayerFullScreenContent(
+            session: session,
+            urlString: urlString,
+            initialVolume: volume,
+            onPlaybackError: onPlaybackError,
+            onExit: { [weak self] in self?.dismiss() }
+        )
+        let hosting = NSHostingController(rootView: content)
+        let window = NSWindow(contentViewController: hosting)
+        window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.title = ""
+        window.backgroundColor = .black
+        window.isReleasedWhenClosed = false
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.delegate = self
+        window.setContentSize(NSSize(width: 1280, height: 720))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        self.window = window
+        window.toggleFullScreen(nil)
+    }
+
+    func dismiss() {
+        guard let window, !isClosing else { return }
+        if window.styleMask.contains(.fullScreen) {
+            // Leave full-screen first; the window is closed once the exit
+            // transition finishes (windowDidExitFullScreen).
+            window.toggleFullScreen(nil)
+        } else {
+            window.close()
+        }
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        window?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        isClosing = true
+        window?.delegate = nil
+        window = nil
+        let onClose = onClose
+        self.onClose = nil
+        isClosing = false
+        onClose?()
+    }
+}
+
+private struct MacSGPlayerFullScreenContent: View {
+
+    let session: SGPlayerCompatibilitySession
+    let urlString: String
+    let initialVolume: Double
+    let onPlaybackError: (String?) -> Void
+    let onExit: () -> Void
+    @State private var isPlaying = true
+    @State private var volume = 1.0
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            SGPlayerSurface(
+                urlString: urlString,
+                widthMultiplier: 1,
+                session: session,
+                attachPriority: 2,
+                onPlaybackError: { message in
+                    errorMessage = message
+                    onPlaybackError(message)
+                },
+                isPlaying: $isPlaying,
+                volume: $volume,
+                isFullScreen: true,
+                showsControls: true,
+                fullScreenSystemImage: "xmark",
+                fullScreenAccessibilityLabel: "Exit Full Screen",
+                fullScreenAction: onExit
+            )
+            .ignoresSafeArea()
+
+            if let errorMessage {
+                ContentUnavailableView {
+                    Label("Unable to Play Channel", systemImage: "lock.slash")
+                } description: {
+                    Text(errorMessage)
+                }
+                .frame(maxWidth: 480)
+                .glassEffect(.regular, in: .rect(cornerRadius: 20))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            volume = initialVolume
+            isPlaying = session.isPlaying
+        }
+    }
+}
+
 private struct MacOsPlayerView: NSViewRepresentable {
 
     let urlString: String
     let onPlaybackError: (String?) -> Void
+    let onExitFullScreen: () -> Void
 
-    func makeNSView(context: Context) -> MacOsPlayerLayerView {
-        let view = MacOsPlayerLayerView()
+    func makeNSView(context: Context) -> AVPlayerView {
+        // AVPlayerView gives native on-screen transport controls plus a
+        // working full-screen toggle button, which a bare AVPlayerLayer
+        // lacks.
+        let view = AVPlayerView()
         view.player = context.coordinator.controller.player
+        view.controlsStyle = .floating
+        view.showsFullScreenToggleButton = true
+        view.allowsPictureInPicturePlayback = true
+        view.videoGravity = .resizeAspect
+        view.delegate = context.coordinator
         return view
     }
 
-    func updateNSView(_ nsView: MacOsPlayerLayerView, context: Context) {
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        // No forced play(): the controller autoplays and recovers on its own,
+        // and AVPlayerView's own controls own pause/resume.
         if nsView.player !== context.coordinator.controller.player {
             nsView.player = context.coordinator.controller.player
         }
-        nsView.player?.play()
     }
 
     func makeCoordinator() -> Coordinator {
-        return Coordinator(
+        Coordinator(
             controller: StreamPlayerController(
                 urlString: urlString,
                 onPlaybackError: onPlaybackError
-            )
+            ),
+            onExitFullScreen: onExitFullScreen
         )
     }
 
-    static func dismantleNSView(_ nsView: Self.NSViewType, coordinator: Self.Coordinator) {
+    static func dismantleNSView(_ nsView: AVPlayerView, coordinator: Coordinator) {
         nsView.player?.pause()
         nsView.player = nil
     }
@@ -1058,48 +1220,19 @@ private struct MacOsPlayerView: NSViewRepresentable {
         return .init(width: width, height: width * (9.0 / 16.0))
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, AVPlayerViewDelegate {
 
         let controller: StreamPlayerController
+        let onExitFullScreen: () -> Void
 
-        init(controller: StreamPlayerController) {
+        init(controller: StreamPlayerController, onExitFullScreen: @escaping () -> Void) {
             self.controller = controller
+            self.onExitFullScreen = onExitFullScreen
         }
-    }
-}
 
-private final class MacOsPlayerLayerView: NSView {
-
-    private let playbackLayer = AVPlayerLayer()
-
-    var player: AVPlayer? {
-        get {
-            playbackLayer.player
+        func playerViewWillExitFullScreen(_ playerView: AVPlayerView) {
+            onExitFullScreen()
         }
-        set {
-            playbackLayer.player = newValue
-        }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        playbackLayer.videoGravity = .resizeAspect
-        playbackLayer.backgroundColor = NSColor.black.cgColor
-        layer = playbackLayer
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        playbackLayer.frame = bounds
-        CATransaction.commit()
     }
 }
 #elseif os(tvOS)
@@ -1141,14 +1274,16 @@ private final class TvOSPlayer {
     }
 
     func compactView(onPlaybackError: @escaping (String?) -> Void) -> some View {
+        // Playback is started/stopped by StreamView's activate/pause engine
+        // hooks; calling play() here would re-run on every body evaluation
+        // (at least once a minute via the TimelineView) and silently undo a
+        // user-initiated pause.
         controller.setPlaybackErrorHandler(onPlaybackError)
-        controller.play()
         return TvOSPlayerView(player: controller.player, compact: true, showsPlaybackControls: true)
     }
 
     func fullScreenView(onPlaybackError: @escaping (String?) -> Void, showsControls: Bool) -> some View {
         controller.setPlaybackErrorHandler(onPlaybackError)
-        controller.play()
         return TvOSPlayerView(
             player: controller.player,
             compact: false,
@@ -1187,6 +1322,7 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
         controller.player = context.coordinator.controller.player
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.delegate = context.coordinator
         return controller
     }
 
@@ -1200,15 +1336,33 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        uiViewController.player?.play()
+        // No forced play(): the controller autoplays on creation and
+        // recovers on its own, so re-playing here would undo a user pause
+        // (including AVPlayer's native fullscreen controls).
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
 
         let controller: StreamPlayerController
 
         init(controller: StreamPlayerController) {
             self.controller = controller
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            willBeginFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
+        ) {
+            // Match the SGPlayer path: let the phone rotate to landscape for
+            // AVPlayer's native fullscreen even though the app UI is portrait.
+            IOSVideoOrientationCoordinator.enterFullScreen()
+        }
+
+        func playerViewController(
+            _ playerViewController: AVPlayerViewController,
+            willEndFullScreenPresentationWithAnimationCoordinator coordinator: any UIViewControllerTransitionCoordinator
+        ) {
+            IOSVideoOrientationCoordinator.exitFullScreen()
         }
     }
 
@@ -1220,6 +1374,72 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Self.UIViewControllerType, context: Self.Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
         return .init(width: width, height: width * (9.0 / 16.0))
+    }
+}
+#endif
+
+#if os(iOS)
+private struct IOSVideoFullScreenOrientationModifier: ViewModifier {
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                IOSVideoOrientationCoordinator.enterFullScreen()
+            }
+            .onDisappear {
+                IOSVideoOrientationCoordinator.exitFullScreen()
+            }
+    }
+}
+
+@MainActor
+private enum IOSVideoOrientationCoordinator {
+
+    static func enterFullScreen() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else {
+            HiPlayerAppDelegate.orientationLock = nil
+            refreshSupportedInterfaceOrientations()
+            return
+        }
+
+        HiPlayerAppDelegate.orientationLock = .landscape
+        requestGeometryUpdate(.landscapeRight)
+    }
+
+    static func exitFullScreen() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else {
+            HiPlayerAppDelegate.orientationLock = nil
+            refreshSupportedInterfaceOrientations()
+            return
+        }
+
+        // Restore the default (unlocked) state rather than cementing a
+        // portrait lock; the delegate already defaults the phone to portrait.
+        HiPlayerAppDelegate.orientationLock = nil
+        requestGeometryUpdate(.portrait)
+    }
+
+    private static func requestGeometryUpdate(_ orientationMask: UIInterfaceOrientationMask) {
+        refreshSupportedInterfaceOrientations()
+        guard let windowScene = foregroundWindowScene else { return }
+
+        windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: orientationMask)) { error in
+            Container.shared.logger().error(error)
+        }
+    }
+
+    private static func refreshSupportedInterfaceOrientations() {
+        for case let windowScene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in windowScene.windows {
+                window.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            }
+        }
+    }
+
+    private static var foregroundWindowScene: UIWindowScene? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
     }
 }
 #endif

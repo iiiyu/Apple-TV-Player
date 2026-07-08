@@ -100,7 +100,18 @@ nonisolated extension PlaylistItem: Codable {
 extension PlaylistItem {
 
     static var UtType: UTType {
-        UTType((Bundle.main.infoDictionary!["UTExportedTypeDeclarations"]! as! [[String: Any]])[0]["UTTypeIdentifier"] as! String)!
+        // Read the exported type from the Info.plist so it follows the bundle
+        // identifier, but never crash in hosts without the declaration
+        // (unit tests, extensions).
+        if let declarations = Bundle.main.infoDictionary?["UTExportedTypeDeclarations"] as? [[String: Any]],
+           let identifier = declarations.first?["UTTypeIdentifier"] as? String,
+           let type = UTType(identifier) {
+            return type
+        }
+        if let identifier = Bundle.main.bundleIdentifier {
+            return UTType(exportedAs: "\(identifier).playlist")
+        }
+        return .json
     }
 }
 
