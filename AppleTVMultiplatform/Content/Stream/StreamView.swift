@@ -798,6 +798,10 @@ private struct SGPlayerSurface: View {
     let fullScreenSystemImage: String
     let fullScreenAccessibilityLabel: LocalizedStringKey
     let fullScreenAction: (() -> Void)?
+#if !os(tvOS)
+    @State private var controlsShown = true
+    @State private var autoHideToken = UUID()
+#endif
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -811,33 +815,33 @@ private struct SGPlayerSurface: View {
             )
             .background(.black)
 
-            if showsControls {
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.55)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: isFullScreen ? 140 : 80)
-                    .allowsHitTesting(false)
-
-                    SGPlayerControls(
-                        session: session,
-                        isPlaying: $isPlaying,
-                        volume: $volume,
-                        isFullScreen: isFullScreen,
-                        fullScreenSystemImage: fullScreenSystemImage,
-                        fullScreenAccessibilityLabel: fullScreenAccessibilityLabel,
-                        fullScreenAction: fullScreenAction
-                    )
-                }
-                .transition(.opacity)
+#if os(tvOS)
+            if controlsVisible {
+                controlsBar.transition(.opacity)
             }
+#else
+            // The tap-to-toggle region sits ABOVE the control bar, not over it,
+            // so its tap gesture never competes with the bar's buttons (which
+            // otherwise lost taps while the slider — a drag — still worked).
+            VStack(spacing: 0) {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleControls() }
+                if controlsVisible {
+                    controlsBar.transition(.opacity)
+                }
+            }
+#endif
         }
         .background(.black)
-        .animation(.easeOut(duration: 0.2), value: showsControls)
+        .animation(.easeOut(duration: 0.2), value: controlsVisible)
+#if !os(tvOS)
+        .task(id: autoHideToken) { await autoHideControls() }
+#endif
         .onAppear {
-            configurePlaybackAudioSessionIfNeeded()
+            // The playback audio session is activated inside the session right
+            // before playback starts (SGPlayerCompatibilitySession.play), so it
+            // is ready before SGPlayer's audio unit initializes.
             session.volume = volume
             session.setPlaybackStateHandler { playing in
                 guard isPlaying != playing else { return }
@@ -846,29 +850,55 @@ private struct SGPlayerSurface: View {
         }
     }
 
-    private func configurePlaybackAudioSessionIfNeeded() {
-#if os(iOS)
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(
-                .playback,
-                mode: .moviePlayback,
-                options: [.allowAirPlay, .allowBluetoothHFP, .allowBluetoothA2DP]
-            )
-            try audioSession.setActive(true)
-        } catch {
-            Container.shared.logger().error(error)
-        }
-#elseif os(tvOS)
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
-            try audioSession.setActive(true)
-        } catch {
-            Container.shared.logger().error(error)
-        }
+    // Just the Liquid Glass control bar — no dark gradient behind it.
+    private var controlsBar: some View {
+        SGPlayerControls(
+            session: session,
+            isPlaying: $isPlaying,
+            volume: $volume,
+            isFullScreen: isFullScreen,
+            fullScreenSystemImage: fullScreenSystemImage,
+            fullScreenAccessibilityLabel: fullScreenAccessibilityLabel,
+            fullScreenAction: fullScreenAction,
+            onInteraction: keepControlsAlive
+        )
+    }
+
+    private var controlsVisible: Bool {
+#if os(tvOS)
+        showsControls
+#else
+        showsControls && controlsShown
 #endif
     }
+
+    // Show the controls (if hidden) and restart the inactivity timer. Called on
+    // tap and on any control interaction so the bar stays up while in use.
+    // No-op on tvOS, where full-screen control visibility is managed externally.
+    private func keepControlsAlive() {
+#if !os(tvOS)
+        controlsShown = true
+        autoHideToken = UUID()
+#endif
+    }
+
+#if !os(tvOS)
+    private func toggleControls() {
+        if controlsShown {
+            controlsShown = false
+        } else {
+            keepControlsAlive()
+        }
+    }
+
+    private func autoHideControls() async {
+        try? await Task.sleep(for: .seconds(3))
+        guard !Task.isCancelled else { return }
+        // Keep the controls up while paused so the user can resume.
+        guard session.isPlaying else { return }
+        controlsShown = false
+    }
+#endif
 }
 
 private struct SGPlayerControls: View {
@@ -880,10 +910,12 @@ private struct SGPlayerControls: View {
     let fullScreenSystemImage: String
     let fullScreenAccessibilityLabel: LocalizedStringKey
     let fullScreenAction: (() -> Void)?
+    var onInteraction: () -> Void = {}
 
     var body: some View {
         HStack(spacing: controlSpacing) {
             Button {
+                onInteraction()
                 togglePlayback()
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -893,6 +925,7 @@ private struct SGPlayerControls: View {
             Spacer(minLength: 8)
 
             Button {
+                onInteraction()
                 toggleMute()
             } label: {
                 Image(systemName: volume <= 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -903,6 +936,7 @@ private struct SGPlayerControls: View {
 
             if let fullScreenAction {
                 Button {
+                    onInteraction()
                     fullScreenAction()
                 } label: {
                     Image(systemName: fullScreenSystemImage)
@@ -981,6 +1015,7 @@ private struct SGPlayerControls: View {
     }
 
     private func setVolume(_ newValue: Double) {
+        onInteraction()
         let clamped = min(max(newValue, 0), 1)
         volume = clamped
         session.volume = clamped

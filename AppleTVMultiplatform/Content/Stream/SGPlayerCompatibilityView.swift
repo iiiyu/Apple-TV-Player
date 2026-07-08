@@ -1,5 +1,7 @@
 @preconcurrency import Foundation
 import SwiftUI
+import AVFoundation
+import FactoryKit
 
 #if os(macOS)
 import AppKit
@@ -286,6 +288,7 @@ final class SGPlayerCompatibilitySession {
 
     func play() {
         isPlaybackRequested = true
+        Self.activatePlaybackAudioSession()
         reportPlaybackError(nil)
         sendBooleanMessage("play")
         updateIdlePrevention(isPlaying: true)
@@ -304,9 +307,28 @@ final class SGPlayerCompatibilitySession {
     // a pending playback error.
     private func resumeIfPlaybackRequested() {
         guard isPlaybackRequested else { return }
+        Self.activatePlaybackAudioSession()
         sendBooleanMessage("play")
         updateIdlePrevention(isPlaying: true)
         reportPlaybackState()
+    }
+
+    /// Activates the playback audio session before SGPlayer starts its audio
+    /// unit. On iOS, if the session isn't active/routable when playback begins
+    /// the audio unit fails and A/V sync stalls the video (macOS has no audio
+    /// session, which is why the same channel plays there but freezes here).
+    private static func activatePlaybackAudioSession() {
+#if os(iOS) || os(tvOS)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if session.category != .playback {
+                try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetoothA2DP])
+            }
+            try session.setActive(true)
+        } catch {
+            Container.shared.logger().error(error)
+        }
+#endif
     }
 
     var isPlaying: Bool {
@@ -487,6 +509,11 @@ final class SGPlayerCompatibilitySession {
         view.layer?.backgroundColor = NSColor.black.cgColor
 #else
         view.backgroundColor = .black
+        // The video never needs touches; disabling interaction on the whole
+        // host subtree (SGPlayer renders into a subview here) stops a
+        // space-filling representable from swallowing taps meant for the
+        // SwiftUI controls overlaid on top.
+        view.isUserInteractionEnabled = false
 #endif
     }
 }
