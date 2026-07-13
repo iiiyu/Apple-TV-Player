@@ -18,7 +18,9 @@ scripts/tests/__pycache__/server.cpython-314.pyc
 
 # Generated App Store screenshot output. Recreate with
 # scripts/appstore/prepare-screenshots.py when needed.
-AppStoreAssets/
+AppStoreAssets/*
+!AppStoreAssets/brand/
+!AppStoreAssets/brand/**
 
 # Local binary player frameworks are too large for normal GitHub storage.
 # See vendor/README.md for setup notes.
