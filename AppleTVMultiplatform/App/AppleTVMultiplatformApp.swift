@@ -4,6 +4,8 @@ import SwiftData
 import FactoryKit
 #if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 @main
@@ -14,6 +16,8 @@ struct AppleTVMultiplatformApp: App {
     @InjectedObservable(\.logger) var logger
 #if os(iOS)
     @UIApplicationDelegateAdaptor(HiPlayerAppDelegate.self) private var appDelegate
+#elseif os(macOS)
+    @NSApplicationDelegateAdaptor(HiPlayerMacAppDelegate.self) private var appDelegate
 #endif
 
     var body: some Scene {
@@ -41,6 +45,9 @@ struct AppleTVMultiplatformApp: App {
                     Button("OK", role: .cancel) { }
                 })
         }
+#if os(macOS)
+        .defaultSize(width: 1200, height: 720)
+#endif
     }
 }
 
@@ -57,6 +64,35 @@ final class HiPlayerAppDelegate: NSObject, UIApplicationDelegate {
             return orientationLock
         }
         return UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
+    }
+}
+#endif
+
+#if os(macOS)
+final class HiPlayerMacAppDelegate: NSObject, NSApplicationDelegate {
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            self.showMainWindow(in: NSApp)
+        }
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        if !flag {
+            showMainWindow(in: sender)
+        }
+        return true
+    }
+
+    private func showMainWindow(in application: NSApplication) {
+        application.activate()
+        application.windows
+            .first(where: { $0.canBecomeMain })?
+            .makeKeyAndOrderFront(nil)
     }
 }
 #endif
