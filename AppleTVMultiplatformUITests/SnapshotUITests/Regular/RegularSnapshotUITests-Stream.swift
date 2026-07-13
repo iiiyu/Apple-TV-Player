@@ -70,6 +70,47 @@ final class RegularSnapshotUITests_Stream: XCTestCase {
         try await macOS(app: app, playlist: testPlaylist)
 #endif
     }
+
+#if os(iOS)
+    func testPlaybackNavigationCanSelectAnotherStream() async throws {
+        guard UIDevice.current.userInterfaceIdiom == .phone else {
+            throw XCTSkip("This regression covers compact iPhone navigation.")
+        }
+        let testConfig = try await apiClient.config()
+        let playlist = try XCTUnwrap(testConfig.playlists.first(where: { $0.original == "Movies" }))
+        let app = XCUIApplication()
+        app.launchArguments.append("--in-memory-database-only")
+        app.launch()
+        app.activate()
+
+        try await app.buttons["add"].firstMatch.makeTap()
+        try await app.textFields["name"].firstMatch.makeTap(wait: .seconds(0)).typeText(playlist.name)
+        try await app.textFields["url"].firstMatch.makeTap(wait: .seconds(0)).typeText(playlist.url)
+        try await app.textFields["tvg-logo"].firstMatch.makeTap(wait: .seconds(0)).typeText(playlist.tvgLogo)
+        try await app.textFields["url-tvg"].firstMatch.makeTap(wait: .seconds(0)).typeText(playlist.urlTvg)
+        try await app.textFields["url-img"].firstMatch.makeTap(wait: .seconds(0)).typeText(playlist.urlImg)
+        try await app.buttons["confirm"].firstMatch.makeTap(wait: .seconds(1))
+
+        try await app.cells.firstMatch.makeTap(wait: .seconds(1))
+        XCTAssertEqual(app.cells.firstMatch.staticTexts.element(boundBy: 0).label, "Comedy")
+        try await app.cells.element(boundBy: 0).makeTap(wait: .seconds(2))
+        XCTAssertTrue(app.navigationBars["Comedy"].waitForExistence(timeout: 5))
+
+        try await tapBack(in: app)
+        try await app.cells.element(boundBy: 1).makeTap(wait: .seconds(2))
+        XCTAssertTrue(app.navigationBars["Action"].waitForExistence(timeout: 5))
+
+        try await tapBack(in: app)
+        try await app.cells.element(boundBy: 0).makeTap(wait: .seconds(2))
+        XCTAssertTrue(app.navigationBars["Comedy"].waitForExistence(timeout: 5))
+
+        try await tapBack(in: app)
+        try await tapBack(in: app)
+        XCTAssertEqual(app.cells.firstMatch.staticTexts.element(boundBy: 0).label, "Movies")
+        try await app.cells.firstMatch.makeTap(wait: .seconds(2))
+        XCTAssertEqual(app.cells.firstMatch.staticTexts.element(boundBy: 0).label, "Comedy")
+    }
+#endif
     
 #if os(iOS)
     private func iPad(app: XCUIApplication, playlist: Playlist) async throws {
@@ -144,6 +185,14 @@ final class RegularSnapshotUITests_Stream: XCTestCase {
         XCTAssertEqual(app.scrollViews["details"].firstMatch.staticTexts.element(boundBy: 0).label, "15:00 - 17:00: 21 Jump Street")
         XCTAssertEqual(app.scrollViews["details"].firstMatch.staticTexts.element(boundBy: 1).label, "17:00 - 19:00: Palm Springs")
         XCTAssertEqual(app.scrollViews["details"].firstMatch.staticTexts.element(boundBy: 2).label, "19:00 - 21:00: Vacation")
+    }
+
+    private func tapBack(in app: XCUIApplication, wait: Duration = .seconds(1)) async throws {
+        if #available(iOS 26.0, *) {
+            try await app.buttons["BackButton"].firstMatch.makeTap(wait: wait)
+        } else {
+            try await app.navigationBars.firstMatch.buttons.firstMatch.makeTap(wait: wait)
+        }
     }
 #endif
 #if os(tvOS)

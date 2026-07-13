@@ -107,6 +107,18 @@ final class ContentViewModel {
     @ObservationIgnored private var pendingRestoreStreamHmac: String?
     @ObservationIgnored private var didAttemptRestore = false
 
+    func prepareForLaunch(restoringLastWatched: Bool) {
+        guard !didAttemptRestore else {
+            return
+        }
+        guard restoringLastWatched else {
+            leavePlaylist()
+            didAttemptRestore = true
+            return
+        }
+        restoreLastWatched()
+    }
+
     func restoreLastWatched() {
         guard !didAttemptRestore else {
             return
@@ -129,6 +141,27 @@ final class ContentViewModel {
         logger.info("Restore last watched playlist", private: identity)
         pendingRestoreStreamHmac = appSettings.lastStreamHmac
         selectedPlaylist = identity
+    }
+
+    func leavePlaylist() {
+        selectionTask?.cancel()
+        selectedPlaylist = nil
+        selectedPlaylistContent = nil
+        selectedPlaylistStream = nil
+        isShowingPlaylistDecryptPin = nil
+        pendingRestoreStreamHmac = nil
+#if os(tvOS)
+        path = []
+#endif
+    }
+
+    @discardableResult
+    func clearSelectedStream(ifMatching stream: PlaylistParser.Stream) -> Bool {
+        guard selectedPlaylistStream == stream else {
+            return false
+        }
+        selectedPlaylistStream = nil
+        return true
     }
 
     func consumeRestoreStreamHmac() -> String? {

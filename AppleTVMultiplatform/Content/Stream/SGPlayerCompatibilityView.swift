@@ -162,6 +162,7 @@ final class SGPlayerCompatibilitySession {
     private var attachedViewPriority = 0
     private weak var primaryView: SGHostView?
     private var isPlaybackRequested = true
+    private var isShutdown = false
 
     init?(urlString: String, onPlaybackError: ((String?) -> Void)? = nil) {
         guard let playerClass = SGPlayerRuntime.playerClass as? NSObject.Type else {
@@ -170,6 +171,7 @@ final class SGPlayerCompatibilitySession {
 
         self.player = playerClass.init()
         self.onPlaybackError = onPlaybackError
+        configureApplicationLifecycleBehavior()
         observePlayerInfo()
         // Opening the stream is deferred to the first replace()/attach();
         // SwiftUI evaluates @State initial values on every view-struct
@@ -197,6 +199,7 @@ final class SGPlayerCompatibilitySession {
     }
 
     func replace(with urlString: String, forceReload: Bool = false) {
+        guard !isShutdown else { return }
         guard forceReload || requestedURLString != urlString else { return }
         guard let source = SGPlayerSource(urlString: urlString) else {
             reportPlaybackError(String(localized: "The channel URL is invalid."))
@@ -241,6 +244,7 @@ final class SGPlayerCompatibilitySession {
     }
 
     fileprivate func attach(to view: SGHostView, priority: Int = 0) {
+        guard !isShutdown else { return }
         configureHostView(view)
         // Remember the inline (priority 0) surface so the renderer can be
         // handed back to it when a higher-priority full-screen surface goes
@@ -287,6 +291,7 @@ final class SGPlayerCompatibilitySession {
     }
 
     func play() {
+        guard !isShutdown else { return }
         isPlaybackRequested = true
         Self.activatePlaybackAudioSession()
         reportPlaybackError(nil)
@@ -300,6 +305,22 @@ final class SGPlayerCompatibilitySession {
         sendBooleanMessage("pause")
         updateIdlePrevention(isPlaying: false)
         reportPlaybackState()
+    }
+
+    /// Permanently tears down this page-owned session.
+    ///
+    /// SGPlayer has no public `replaceCurrentItem(nil)` equivalent. Pausing,
+    /// detaching the renderer, clearing callbacks, and then releasing the
+    /// session owner is the supported way to let its current item deallocate.
+    func shutdown() {
+        guard !isShutdown else { return }
+        isShutdown = true
+        isPlaybackRequested = false
+        sendBooleanMessage("pause")
+        detach()
+        onPlaybackError = nil
+        onPlaybackStateChange = nil
+        updateIdlePrevention(isPlaying: false)
     }
 
     // Called from SwiftUI view updates, which re-run on every render tick;
@@ -328,6 +349,15 @@ final class SGPlayerCompatibilitySession {
         } catch {
             Container.shared.logger().error(error)
         }
+#endif
+    }
+
+    private func configureApplicationLifecycleBehavior() {
+#if os(iOS)
+        // SGPlayer defaults this property to false, which lets audio continue
+        // after the app enters the background. HiPlayer's playback is scoped
+        // to the visible player page, so backgrounding must pause it.
+        setBooleanMessage("setPausesWhenEnteredBackground:", value: true)
 #endif
     }
 
@@ -501,6 +531,16 @@ final class SGPlayerCompatibilitySession {
         typealias SetDoubleMessage = @convention(c) (AnyObject, Selector, Double) -> Void
         let message = unsafeBitCast(implementation, to: SetDoubleMessage.self)
         message(object, selector, value)
+    }
+
+    private func setBooleanMessage(_ selectorName: String, value: Bool) {
+        let selector = NSSelectorFromString(selectorName)
+        guard player.responds(to: selector) else { return }
+
+        let implementation = player.method(for: selector)
+        typealias SetBooleanMessage = @convention(c) (AnyObject, Selector, Bool) -> Void
+        let message = unsafeBitCast(implementation, to: SetBooleanMessage.self)
+        message(player, selector, value)
     }
 
     private func configureHostView(_ view: SGHostView) {

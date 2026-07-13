@@ -24,7 +24,8 @@
     {
       "selectedTests" : [
         "RegularSnapshotUITests_Passcode\/test()",
-        "RegularSnapshotUITests_Stream\/test()"
+        "RegularSnapshotUITests_Stream\/test()",
+        "RegularSnapshotUITests_Stream\/testPlaybackNavigationCanSelectAnotherStream()"
       ],
       "target" : {
         "containerPath" : "container:AppleTVMultiplatform.xcodeproj",

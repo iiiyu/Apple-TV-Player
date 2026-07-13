@@ -1,0 +1,138 @@
+{
+  "ar-SA": {
+    "playlists": "قوائم M3U. في كل مكان.",
+    "playlist_add": "أضف M3U خلال ثوانٍ",
+    "playlist": "القنوات المباشرة ودليل البرامج",
+    "stream": "تشغيل سلس بملء الشاشة",
+    "playlist_settings_menu": "تحكم سريع. جهد أقل.",
+    "playlist_settings": "خصوصية بحكم التصميم"
+  },
+  "de-DE": {
+    "playlists": "Deine M3U-Playlists. Überall.",
+    "playlist_add": "M3U in Sekunden hinzufügen",
+    "playlist": "Live-Sender & Programmführer",
+    "stream": "Flüssige Wiedergabe im Vollbild",
+    "playlist_settings_menu": "Schnelle Steuerung. Weniger Aufwand.",
+    "playlist_settings": "Datenschutz von Grund auf"
+  },
+  "en-US": {
+    "playlists": "Your M3U Playlists. Everywhere.",
+    "playlist_add": "Add M3U in Seconds",
+    "playlist": "Live Channels & EPG",
+    "stream": "Smooth Full-Screen Playback",
+    "playlist_settings_menu": "Quick Controls. Less Effort.",
+    "playlist_settings": "Private by Design"
+  },
+  "es-ES": {
+    "playlists": "Tus listas M3U. En todas partes.",
+    "playlist_add": "Añade M3U en segundos",
+    "playlist": "Canales en directo y guía",
+    "stream": "Reproducción fluida a pantalla completa",
+    "playlist_settings_menu": "Controles rápidos. Menos esfuerzo.",
+    "playlist_settings": "Privacidad desde el diseño"
+  },
+  "es-MX": {
+    "playlists": "Tus listas M3U. Donde sea.",
+    "playlist_add": "Agrega M3U en segundos",
+    "playlist": "Canales en vivo y guía",
+    "stream": "Reproducción fluida en pantalla completa",
+    "playlist_settings_menu": "Controles rápidos. Menos esfuerzo.",
+    "playlist_settings": "Privacidad desde el diseño"
+  },
+  "fr-FR": {
+    "playlists": "Vos playlists M3U. Partout.",
+    "playlist_add": "Ajoutez une M3U en quelques secondes",
+    "playlist": "Chaînes en direct et programme TV",
+    "stream": "Lecture fluide en plein écran",
+    "playlist_settings_menu": "Commandes rapides. Moins d’effort.",
+    "playlist_settings": "Confidentialité dès la conception"
+  },
+  "hi": {
+    "playlists": "आपकी M3U प्लेलिस्ट। हर जगह।",
+    "playlist_add": "सेकंडों में M3U जोड़ें",
+    "playlist": "लाइव चैनल और प्रोग्राम गाइड",
+    "stream": "सहज फ़ुल-स्क्रीन प्लेबैक",
+    "playlist_settings_menu": "झटपट कंट्रोल। कम मेहनत।",
+    "playlist_settings": "निजता को ध्यान में रखकर"
+  },
+  "id": {
+    "playlists": "Playlist M3U Anda. Di mana saja.",
+    "playlist_add": "Tambahkan M3U dalam hitungan detik",
+    "playlist": "Saluran langsung & panduan acara",
+    "stream": "Pemutaran layar penuh yang mulus",
+    "playlist_settings_menu": "Kontrol cepat. Lebih praktis.",
+    "playlist_settings": "Privasi sejak awal"
+  },
+  "it": {
+    "playlists": "Le tue playlist M3U. Ovunque.",
+    "playlist_add": "Aggiungi M3U in pochi secondi",
+    "playlist": "Canali live e guida TV",
+    "stream": "Riproduzione fluida a schermo intero",
+    "playlist_settings_menu": "Controlli rapidi. Meno fatica.",
+    "playlist_settings": "Privacy fin dalla progettazione"
+  },
+  "ja": {
+    "playlists": "M3Uプレイリストを、どこでも",
+    "playlist_add": "数秒でM3Uを追加",
+    "playlist": "ライブチャンネルと番組表",
+    "stream": "滑らかなフルスクリーン再生",
+    "playlist_settings_menu": "すばやく操作。もっと手軽に。",
+    "playlist_settings": "プライバシー重視の設計"
+  },
+  "ko": {
+    "playlists": "M3U 재생목록을 어디서나",
+    "playlist_add": "몇 초 만에 M3U 추가",
+    "playlist": "라이브 채널과 프로그램 가이드",
+    "stream": "부드러운 전체 화면 재생",
+    "playlist_settings_menu": "빠른 제어. 더 간편하게.",
+    "playlist_settings": "개인정보 보호 중심 설계"
+  },
+  "pt-BR": {
+    "playlists": "Suas playlists M3U. Em todo lugar.",
+    "playlist_add": "Adicione M3U em segundos",
+    "playlist": "Canais ao vivo e guia",
+    "stream": "Reprodução fluida em tela cheia",
+    "playlist_settings_menu": "Controles rápidos. Menos esforço.",
+    "playlist_settings": "Privacidade desde a concepção"
+  },
+  "ru": {
+    "playlists": "Ваши плейлисты M3U. Везде.",
+    "playlist_add": "Добавьте M3U за секунды",
+    "playlist": "Прямые каналы и телепрограмма",
+    "stream": "Плавное полноэкранное воспроизведение",
+    "playlist_settings_menu": "Быстрое управление. Меньше усилий.",
+    "playlist_settings": "Конфиденциальность в основе"
+  },
+  "th": {
+    "playlists": "เพลย์ลิสต์ M3U ของคุณ ทุกที่",
+    "playlist_add": "เพิ่ม M3U ได้ในไม่กี่วินาที",
+    "playlist": "ช่องสดและผังรายการ",
+    "stream": "เล่นเต็มจอได้อย่างลื่นไหล",
+    "playlist_settings_menu": "ควบคุมรวดเร็ว ใช้งานง่ายขึ้น",
+    "playlist_settings": "ออกแบบโดยคำนึงถึงความเป็นส่วนตัว"
+  },
+  "tr": {
+    "playlists": "M3U listeleriniz. Her yerde.",
+    "playlist_add": "M3U'yu saniyeler içinde ekleyin",
+    "playlist": "Canlı kanallar ve yayın akışı",
+    "stream": "Akıcı tam ekran oynatma",
+    "playlist_settings_menu": "Hızlı kontroller. Daha az uğraş.",
+    "playlist_settings": "Gizlilik odaklı tasarım"
+  },
+  "vi": {
+    "playlists": "Danh sách M3U. Mọi nơi.",
+    "playlist_add": "Thêm M3U trong vài giây",
+    "playlist": "Kênh trực tiếp và lịch phát",
+    "stream": "Phát toàn màn hình mượt mà",
+    "playlist_settings_menu": "Điều khiển nhanh. Ít thao tác.",
+    "playlist_settings": "Riêng tư ngay từ thiết kế"
+  },
+  "zh-Hans": {
+    "playlists": "M3U 播放列表，随处可用",
+    "playlist_add": "几秒添加 M3U",
+    "playlist": "直播频道与节目单",
+    "stream": "流畅全屏播放",
+    "playlist_settings_menu": "快捷控制，省心操作",
+    "playlist_settings": "隐私优先设计"
+  }
+}

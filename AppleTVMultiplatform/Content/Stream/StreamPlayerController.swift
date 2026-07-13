@@ -290,6 +290,33 @@ final class StreamPlayerController {
         player.pause()
     }
 
+    /// Stops playback and releases the current asset/network connection.
+    ///
+    /// `pause()` intentionally keeps the current item so a foregrounded
+    /// playback page can resume quickly. A page that has been popped must use
+    /// `stop()` instead; otherwise a retained NavigationSplitView detail can
+    /// keep an old live connection around while a new detail opens another.
+    func stop() {
+        shouldPlayWhenReady = false
+        recoveryTask?.cancel()
+        recoveryTask = nil
+        videoStartupTask?.cancel()
+        videoStartupTask = nil
+        itemObservers = []
+        cancelCurrentItemLoading()
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        consecutiveFailures = 0
+        didAttemptHLSFallback = false
+        activeURL = originalURL
+        terminalPlaybackError = nil
+        resetPlaybackProgress()
+    }
+
+    var isPlaybackRequested: Bool {
+        shouldPlayWhenReady
+    }
+
     func setPlaybackErrorHandler(_ handler: @escaping (String?) -> Void) {
         onPlaybackError = handler
         if let terminalPlaybackError {

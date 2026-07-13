@@ -12,6 +12,109 @@ import UIKit
 struct ContentViewModelTests {
 
     @MainActor
+    @Test func prepareForLaunchWithoutRestoreStartsAtHome() async throws {
+        let date = Date(timeIntervalSince1970: 100)
+        let playlist = try await makePlaylistItem(name: "Playlist", date: date, encrypted: false)
+        let database = try makeDatabaseService(items: [playlist])
+        let appSettings = AppSettings()
+        appSettings.lastPlaylistName = "Playlist"
+        appSettings.lastPlaylistDate = date
+        appSettings.lastStreamHmac = "stream-hmac"
+        database.mainContext.insert(appSettings)
+        try database.mainContext.save()
+        Container.shared.databaseService.register { database }
+
+        let stream = PlaylistParser.Stream(
+            title: "Existing",
+            url: "https://example.com/existing.m3u8",
+            tvgLogo: nil,
+            tvgID: nil,
+            tvgName: nil,
+            groupTitle: nil
+        )
+        let viewModel = ContentViewModel()
+        viewModel.selectedPlaylist = playlist.identity
+        viewModel.selectedPlaylistContent = .init(
+            identity: try #require(playlist.identity),
+            url: try #require(playlist.url),
+            data: Data("#EXTM3U".utf8),
+            isStoredInMemoryOnly: false
+        )
+        viewModel.selectedPlaylistStream = stream
+
+        viewModel.prepareForLaunch(restoringLastWatched: false)
+
+        #expect(viewModel.selectedPlaylist == nil)
+        #expect(viewModel.selectedPlaylistContent == nil)
+        #expect(viewModel.selectedPlaylistStream == nil)
+        #expect(viewModel.consumeRestoreStreamHmac() == nil)
+
+        // If SwiftUI restarts the task later, don't erase navigation that the
+        // user performed after the initial launch preparation completed.
+        viewModel.selectedPlaylist = playlist.identity
+        viewModel.selectedPlaylistStream = stream
+        viewModel.prepareForLaunch(restoringLastWatched: false)
+        #expect(viewModel.selectedPlaylist == playlist.identity)
+        #expect(viewModel.selectedPlaylistStream == stream)
+    }
+
+    @MainActor
+    @Test func clearSelectedStreamOnlyClearsCurrentPlayback() async throws {
+        let selected = PlaylistParser.Stream(
+            title: "Selected",
+            url: "https://example.com/selected.m3u8",
+            tvgLogo: nil,
+            tvgID: nil,
+            tvgName: nil,
+            groupTitle: nil
+        )
+        let other = PlaylistParser.Stream(
+            title: "Other",
+            url: "https://example.com/other.m3u8",
+            tvgLogo: nil,
+            tvgID: nil,
+            tvgName: nil,
+            groupTitle: nil
+        )
+        let viewModel = ContentViewModel()
+        viewModel.selectedPlaylistStream = selected
+
+        viewModel.clearSelectedStream(ifMatching: other)
+        #expect(viewModel.selectedPlaylistStream == selected)
+
+        viewModel.clearSelectedStream(ifMatching: selected)
+        #expect(viewModel.selectedPlaylistStream == nil)
+    }
+
+    @MainActor
+    @Test func leavePlaylistClearsEveryNavigationSelection() async throws {
+        let identity = PlaylistItem.Identity(name: "Playlist", date: Date(timeIntervalSince1970: 100))
+        let stream = PlaylistParser.Stream(
+            title: "Selected",
+            url: "https://example.com/selected.m3u8",
+            tvgLogo: nil,
+            tvgID: nil,
+            tvgName: nil,
+            groupTitle: nil
+        )
+        let viewModel = ContentViewModel()
+        viewModel.selectedPlaylist = identity
+        viewModel.selectedPlaylistContent = .init(
+            identity: identity,
+            url: Data("https://example.com/playlist.m3u".utf8),
+            data: Data("#EXTM3U".utf8),
+            isStoredInMemoryOnly: false
+        )
+        viewModel.selectedPlaylistStream = stream
+
+        viewModel.leavePlaylist()
+
+        #expect(viewModel.selectedPlaylist == nil)
+        #expect(viewModel.selectedPlaylistContent == nil)
+        #expect(viewModel.selectedPlaylistStream == nil)
+    }
+
+    @MainActor
     @Test func restoreLastWatchedSelectsStoredPlaylistOnce() async throws {
         let date = Date(timeIntervalSince1970: 100)
         let playlist = try await makePlaylistItem(name: "Playlist", date: date, encrypted: false)

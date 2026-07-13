@@ -7,6 +7,31 @@ import Testing
 struct StreamPlayerControllerTests {
 
     @MainActor
+    @Test func stoppedControllerUnloadsItsItemAndCanRestartWithoutCreatingAnotherOwner() {
+        let controller = StreamPlayerController(
+            urlString: "https://example.invalid/live.m3u8",
+            autoplays: false
+        )
+
+        #expect(controller.player.currentItem == nil)
+        #expect(!controller.isPlaybackRequested)
+
+        controller.play()
+        #expect(controller.player.currentItem != nil)
+        #expect(controller.isPlaybackRequested)
+
+        controller.stop()
+        #expect(controller.player.currentItem == nil)
+        #expect(!controller.isPlaybackRequested)
+
+        controller.play()
+        #expect(controller.player.currentItem != nil)
+        #expect(controller.isPlaybackRequested)
+
+        controller.stop()
+    }
+
+    @MainActor
     @Test func hlsFallbackURLUsesXtreamLivePathForExtensionlessStream() throws {
         let url = try #require(URL(string: "https://iptv.example/sample-user/sample-password/119328"))
 

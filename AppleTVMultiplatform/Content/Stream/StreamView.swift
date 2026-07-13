@@ -17,6 +17,7 @@ struct StreamView: View {
     @InjectedObservable(\.logger) var logger
     @State private var viewModel: StreamViewModel
     @Binding private var reloadCurrentProgram: UUID
+    private var onPlaybackPageDisappear: () -> Void = {}
     @State private var showMediaInfo = false
     @State private var playbackErrorMessage: String?
     @State private var playbackReloadID = UUID()
@@ -25,7 +26,11 @@ struct StreamView: View {
     @State private var isSGPlayerPlaying = true
     @State private var sgPlayerVolume = 1.0
 #if os(iOS)
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var iOSPlayer: StreamPlayerController
     @State private var iosFullScreen = IOSSGPlayerFullScreenController()
+    @State private var isPlaybackPageVisible = false
+    @State private var shouldResumeAfterForegrounding = true
 #endif
 #if os(macOS)
     @State private var macFullScreen = MacSGPlayerFullScreenController()
@@ -60,13 +65,21 @@ struct StreamView: View {
     init(
         content: PlaylistItem.Content,
         stream: PlaylistParser.Stream,
-        reloadCurrentProgram: Binding<UUID>
+        reloadCurrentProgram: Binding<UUID>,
+        onPlaybackPageDisappear: @escaping () -> Void = {}
     ) {
         let useSGPlayerCompatibility = SGPlayerCompatibility.isAvailable
         _useSGPlayerCompatibility = State(wrappedValue: useSGPlayerCompatibility)
         _viewModel = State(wrappedValue: StreamViewModel(content: content, stream: stream))
         _sgPlayer = State(wrappedValue: SGPlayerCompatibilitySession(urlString: stream.url))
+#if os(iOS)
+        // The retained controller starts lazily from StreamView.onAppear.
+        // This makes StreamView the single owner and prevents discarded
+        // SwiftUI values from opening extra live connections.
+        _iOSPlayer = State(wrappedValue: StreamPlayerController(urlString: stream.url, autoplays: false))
+#endif
         _reloadCurrentProgram = reloadCurrentProgram
+        self.onPlaybackPageDisappear = onPlaybackPageDisappear
     }
 #endif
 
@@ -143,14 +156,19 @@ struct StreamView: View {
             await viewModel.loadPrograms()
         }
         .onAppear {
-            activateSelectedPlaybackEngine()
+            playbackPageDidAppear()
         }
         .onDisappear {
-            pauseAllPlaybackEngines()
+            playbackPageDidDisappear()
         }
         .onChange(of: useSGPlayerCompatibility) {
             activateSelectedPlaybackEngine()
         }
+#if os(iOS)
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            handleScenePhaseChange(from: oldPhase, to: newPhase)
+        }
+#endif
 #if os(tvOS)
         .fullScreenCover(isPresented: $showFullScreen, onDismiss: {
             reloadCurrentProgram = .init()
@@ -452,10 +470,9 @@ struct StreamView: View {
             }
         } else {
             iOSPlayerView(
-                urlString: viewModel.stream.url,
+                controller: iOSPlayer,
                 onPlaybackError: handlePlaybackError
             )
-            .id(playbackReloadID)
         }
 #endif
     }
@@ -469,6 +486,7 @@ struct StreamView: View {
             volume: sgPlayerVolume,
             onPlaybackError: handlePlaybackError,
             onClose: {
+                guard isPlaybackPageVisible, scenePhase == .active else { return }
                 isSGPlayerPlaying = true
                 reloadCurrentProgram = .init()
                 activateSelectedPlaybackEngine()
@@ -551,10 +569,13 @@ struct StreamView: View {
         playbackErrorMessage = nil
 
         if useSGPlayerCompatibility {
-            sgPlayer?.pause()
+            sgPlayer?.shutdown()
+            sgPlayer = nil
             isSGPlayerPlaying = false
 #if os(tvOS)
-            tvOSPlayer.retry()
+            tvOSPlayer.stop()
+#elseif os(iOS)
+            iOSPlayer.stop()
 #endif
             useSGPlayerCompatibility = false
             playbackReloadID = UUID()
@@ -567,16 +588,11 @@ struct StreamView: View {
         }
 
 #if os(tvOS)
-        tvOSPlayer.pause()
+        tvOSPlayer.stop()
+#elseif os(iOS)
+        iOSPlayer.stop()
 #endif
-        if sgPlayer == nil {
-            sgPlayer = SGPlayerCompatibilitySession(urlString: viewModel.stream.url)
-        }
-        sgPlayer?.replace(with: viewModel.stream.url)
-        sgPlayer?.volume = sgPlayerVolume
-        sgPlayer?.play()
         useSGPlayerCompatibility = true
-        isSGPlayerPlaying = true
         playbackReloadID = UUID()
     }
 
@@ -594,6 +610,8 @@ struct StreamView: View {
         } else {
 #if os(tvOS)
             tvOSPlayer.retry()
+#elseif os(iOS)
+            iOSPlayer.retry()
 #else
             playbackReloadID = UUID()
 #endif
@@ -601,9 +619,14 @@ struct StreamView: View {
     }
 
     private func activateSelectedPlaybackEngine() {
+#if os(iOS)
+        guard isPlaybackPageVisible, scenePhase == .active else { return }
+#endif
         if useSGPlayerCompatibility {
 #if os(tvOS)
-            tvOSPlayer.pause()
+            tvOSPlayer.stop()
+#elseif os(iOS)
+            iOSPlayer.stop()
 #endif
             if sgPlayer == nil {
                 sgPlayer = SGPlayerCompatibilitySession(urlString: viewModel.stream.url)
@@ -613,10 +636,13 @@ struct StreamView: View {
             sgPlayer?.play()
             isSGPlayerPlaying = true
         } else {
-            sgPlayer?.pause()
+            sgPlayer?.shutdown()
+            sgPlayer = nil
             isSGPlayerPlaying = false
 #if os(tvOS)
             tvOSPlayer.play()
+#elseif os(iOS)
+            iOSPlayer.play()
 #endif
         }
     }
@@ -626,8 +652,62 @@ struct StreamView: View {
         isSGPlayerPlaying = false
 #if os(tvOS)
         tvOSPlayer.pause()
+#elseif os(iOS)
+        iOSPlayer.pause()
 #endif
     }
+
+    private func playbackPageDidAppear() {
+#if os(iOS)
+        isPlaybackPageVisible = true
+        shouldResumeAfterForegrounding = true
+        guard scenePhase == .active else { return }
+#endif
+        activateSelectedPlaybackEngine()
+    }
+
+    private func playbackPageDidDisappear() {
+#if os(iOS)
+        // A popped NavigationSplitView detail may stay retained. Explicitly
+        // unload its engines so returning to the same channel cannot leave an
+        // old audio-only connection playing behind the new page.
+        isPlaybackPageVisible = false
+        shouldResumeAfterForegrounding = true
+        iosFullScreen.dismiss(notifyOnClose: false)
+        sgPlayer?.shutdown()
+        sgPlayer = nil
+        isSGPlayerPlaying = false
+        iOSPlayer.stop()
+        playbackErrorMessage = nil
+        onPlaybackPageDisappear()
+#else
+        pauseAllPlaybackEngines()
+#endif
+    }
+
+#if os(iOS)
+    private func handleScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) {
+        switch newPhase {
+        case .active:
+            guard isPlaybackPageVisible, shouldResumeAfterForegrounding else { return }
+            activateSelectedPlaybackEngine()
+        case .inactive, .background:
+            if oldPhase == .active {
+                shouldResumeAfterForegrounding = selectedEngineRequestsPlayback
+            }
+            pauseAllPlaybackEngines()
+        @unknown default:
+            pauseAllPlaybackEngines()
+        }
+    }
+
+    private var selectedEngineRequestsPlayback: Bool {
+        if useSGPlayerCompatibility {
+            return sgPlayer?.isPlaying ?? isSGPlayerPlaying
+        }
+        return iOSPlayer.isPlaybackRequested
+    }
+#endif
 
     @ViewBuilder
     private func programList(snapshot: StreamViewModel.ProgramSnapshot) -> some View {
@@ -804,17 +884,19 @@ private struct SGPlayerSurface: View {
 #endif
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            SGPlayerCompatibilityView(
-                urlString: urlString,
-                widthMultiplier: widthMultiplier,
-                sharedSession: session,
-                attachPriority: attachPriority,
-                fillsAvailableSpace: isFullScreen,
-                onPlaybackError: onPlaybackError
-            )
-            .background(.black)
-
+        SGPlayerCompatibilityView(
+            urlString: urlString,
+            widthMultiplier: widthMultiplier,
+            sharedSession: session,
+            attachPriority: attachPriority,
+            fillsAvailableSpace: isFullScreen,
+            onPlaybackError: onPlaybackError
+        )
+        .background(.black, ignoresSafeAreaEdges: playerBackgroundSafeAreaEdges)
+        // Controls are presentation-only. Keeping them in an overlay prevents
+        // the flexible tap target from participating in ZStack measurement and
+        // stretching the inline player beyond its 16:9 video surface.
+        .overlay(alignment: .bottom) {
 #if os(tvOS)
             if controlsVisible {
                 controlsBar.transition(.opacity)
@@ -833,7 +915,7 @@ private struct SGPlayerSurface: View {
             }
 #endif
         }
-        .background(.black)
+        .background(.black, ignoresSafeAreaEdges: playerBackgroundSafeAreaEdges)
         .animation(.easeOut(duration: 0.2), value: controlsVisible)
 #if !os(tvOS)
         .task(id: autoHideToken) { await autoHideControls() }
@@ -848,6 +930,18 @@ private struct SGPlayerSurface: View {
                 isPlaying = playing
             }
         }
+    }
+
+    private var playerBackgroundSafeAreaEdges: Edge.Set {
+#if os(iOS)
+        // ShapeStyle backgrounds bleed into every adjacent safe area by
+        // default. For the inline player that made its black background climb
+        // behind the transparent navigation bar; only full-screen playback
+        // should paint outside the surface's own bounds.
+        isFullScreen ? .all : []
+#else
+        .all
+#endif
     }
 
     // Just the Liquid Glass control bar — no dark gradient behind it.
@@ -1331,6 +1425,10 @@ private final class TvOSPlayer {
         controller.pause()
     }
 
+    func stop() {
+        controller.stop()
+    }
+
     func play() {
         controller.play()
     }
@@ -1338,7 +1436,7 @@ private final class TvOSPlayer {
 #else
 private struct iOSPlayerView: UIViewControllerRepresentable {
 
-    let urlString: String
+    let controller: StreamPlayerController
     let onPlaybackError: (String?) -> Void
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
@@ -1350,35 +1448,31 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
             Container.shared.logger().error(error)
         }
         let controller = AVPlayerViewController()
-        controller.player = context.coordinator.controller.player
-        controller.allowsPictureInPicturePlayback = true
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.player = self.controller.player
+        // iOS playback is intentionally scoped to the visible stream page.
+        // Disabling PiP keeps the player from becoming a background playback
+        // owner after the user leaves the app.
+        controller.allowsPictureInPicturePlayback = false
+        controller.canStartPictureInPictureAutomaticallyFromInline = false
         controller.delegate = context.coordinator
         return controller
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(
-            controller: StreamPlayerController(
-                urlString: urlString,
-                onPlaybackError: onPlaybackError
-            )
-        )
+        controller.setPlaybackErrorHandler(onPlaybackError)
+        return Coordinator()
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        // No forced play(): the controller autoplays on creation and
-        // recovers on its own, so re-playing here would undo a user pause
-        // (including AVPlayer's native fullscreen controls).
+        controller.setPlaybackErrorHandler(onPlaybackError)
+        if uiViewController.player !== controller.player {
+            uiViewController.player = controller.player
+        }
+        // Playback intent is owned by StreamView's page/scene lifecycle. Do
+        // not call play here: updates can happen while the app is backgrounded.
     }
 
     final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
-
-        let controller: StreamPlayerController
-
-        init(controller: StreamPlayerController) {
-            self.controller = controller
-        }
 
         func playerViewController(
             _ playerViewController: AVPlayerViewController,
@@ -1398,7 +1492,8 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
     }
 
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: Self.Coordinator) {
-        uiViewController.player?.pause()
+        // StreamView owns and stops the shared controller. The representable
+        // only detaches its presentation surface.
         uiViewController.player = nil
     }
 
@@ -1418,7 +1513,7 @@ private struct iOSPlayerView: UIViewControllerRepresentable {
 @MainActor
 final class IOSSGPlayerFullScreenController {
 
-    private weak var presented: UIViewController?
+    private weak var presented: LandscapeHostingController<AnyView>?
 
     func present(
         session: SGPlayerCompatibilitySession,
@@ -1446,9 +1541,15 @@ final class IOSSGPlayerFullScreenController {
         top.present(controller, animated: true)
     }
 
-    func dismiss() {
+    func dismiss(notifyOnClose: Bool = true) {
         guard let presented else { return }
         self.presented = nil
+        if !notifyOnClose {
+            // Page teardown owns stopping the session. Suppress the hosting
+            // controller's delayed close callback so it cannot revive that
+            // session after the navigation transition has already completed.
+            presented.onDismiss = nil
+        }
         presented.dismiss(animated: true) {
             IOSVideoOrientationCoordinator.exitFullScreen()
         }
