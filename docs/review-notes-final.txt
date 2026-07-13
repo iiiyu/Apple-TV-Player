@@ -1,0 +1,44 @@
+Hello App Review Team,
+
+Thank you for your guidance. We have addressed the requested information below and are resubmitting updated builds for iOS, macOS, and tvOS.
+
+1. Screen recording
+Physical-device recording: https://share.icloud.com/photos/0ebF8T9YOUlM-tkBTNMCXoCCw
+
+The recording starts from the device Home Screen and shows the app's typical core flow. The app requires no registration or login. Users add their own lawful M3U or M3U8 playlist, open a channel, and use the playback and playlist-management features. The app has no paid content, subscriptions, advertising, public user-generated content, reporting/blocking flow, or sensitive-data permission prompts.
+
+2. Tested device and operating system
+- iPhone 14, iOS 26.5 (physical device)
+
+3. App purpose and target audience
+Hi IPTV Player / HiPlayer is a private M3U and M3U8 playlist player for people who already have lawful playlist or stream sources and want to organize and play them across Apple devices. The app does not provide, host, sell, or include any channels, media, playlists, or IPTV service.
+
+4. Setup and access instructions
+No login credentials are required because the app does not use developer accounts.
+
+To test the main flow:
+- Launch Hi IPTV Player.
+- Choose Add Playlist.
+- Name: App Review
+- Playlist URL: https://raw.githubusercontent.com/iiiyu/Apple-TV-Player/master/docs/review.m3u
+- Leave optional EPG, logo/image URL, and PIN fields blank.
+- Save the playlist, open it, select Apple HLS Sample, and start playback.
+
+The sample playlist is only for App Review and points to Apple's public HLS sample stream. Users normally add their own M3U or M3U8 playlists or playlist files.
+
+5. External services, tools, or platforms
+The app does not use a developer backend, authentication service, payment processor, advertising network, analytics SDK, or AI service. It may use:
+- Apple iCloud/CloudKit private database sync when the user is signed into iCloud and iCloud is available.
+- User-provided playlist, EPG, logo/image, and stream URLs.
+- Apple's AVPlayer and the app's bundled SGPlayer playback engine/fallback flow.
+- Open-source Swift dependencies for local parsing, image loading, compression, and dependency injection.
+
+6. Regional differences
+The app functions consistently across all regions. The interface and App Store metadata are localized, but features do not change by region. Available playlist content depends entirely on sources added by the user and is not supplied by the developer.
+
+7. Regulated industry or protected third-party material
+The app does not operate in a regulated industry and does not include protected third-party channels, media, or playlists. It is a player for user-provided content only, and users are responsible for having the rights to access content they add. The App Review sample uses Apple's public HLS sample stream.
+
+The updated build also includes playback-lifecycle fixes so leaving the iOS player stops and unloads playback cleanly, and the tvOS Add Playlist flow now opens in a dedicated full-screen form.
+
+Thank you for reviewing the updated submission.

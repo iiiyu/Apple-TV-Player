@@ -1,6 +1,6 @@
 {
   "description": "HiPlayer, iPhone, iPad, Mac ve Apple TV'de M3U oynatma listelerini izlemek için hızlı, özel ve kullanımı kolay bir yoldur. Sadece oynatma listesi URL'sini ekleyin ve saniyeler içinde izlemeye başlayın; hesap yok, kayıt yok.\n\nÖne çıkan özellikler:\n- iOS, iPadOS, macOS ve tvOS üzerinde çalışır\n- M3U ve M3U8 oynatma listelerini destekler\n- EPG desteği\n- Ek gizlilik için oynatma listelerini PIN ile korur\n- Özel iCloud saklama alanıyla listeleri aygıtlar arasında eşzamanlayın\n- Hesap veya kayıt gerektirmez\n- Oynatma listelerini diğer cihazlarla paylaşmanıza olanak tanır\n- Günlük kullanım için hızlı ve anlaşılır arayüz\n\nÖnemli:\nHiPlayer herhangi bir kanal, medya veya oynatma listesi sağlamaz, barındırmaz, satmaz ya da içermez. Uygulama yalnızca kullanıcı tarafından eklenen içeriği oynatır ve bu içeriğe erişim haklarına sahip olmaktan siz sorumlusunuz.\n",
-  "keywords": "m3u8,epg,hls,ott,4k,uhd,hd,canlı,tv,rehber,kanal,spor,futbol,yayın,world,cup,2026,kupa,maç",
+  "keywords": "m3u8,epg,hls,ott,canlı,tv,rehber,kanal,liste,yayın,oynatıcı,favori,pin,gizli,senkronizasyon",
   "marketingUrl": "https://ohmyapps.com/products/hi-iptv-player/",
   "supportUrl": "https://ohmyapps.com/products/hi-iptv-player/"
 }
