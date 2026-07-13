@@ -12,6 +12,17 @@ import AppKit
 // Some members of my family used to old layout on Apple TV.
 private let homeTvOSStreamLayout = false
 
+#if os(tvOS)
+private enum TVOSPlaybackFocus: Hashable {
+    case inlinePlayer
+    case hiddenInteractionSurface
+    case playPause
+    case playbackEngine
+    case streamInfo
+    case exitFullScreen
+}
+#endif
+
 struct StreamView: View {
 
     @InjectedObservable(\.logger) var logger
@@ -39,7 +50,7 @@ struct StreamView: View {
     @State private var showFullScreen = false
     @State private var showTvOSFullScreenControls = true
     @State private var tvOSFullScreenControlsAutoHideID = UUID()
-    @FocusState private var tvOSFullScreenInteractionFocused: Bool
+    @FocusState private var tvOSPlaybackFocus: TVOSPlaybackFocus?
     @State private var tvOSPlayer: TvOSPlayer
     @State private var reloadProgramGuide = UUID()
     @Binding private var reselectStream: Bool
@@ -171,80 +182,20 @@ struct StreamView: View {
 #endif
 #if os(tvOS)
         .fullScreenCover(isPresented: $showFullScreen, onDismiss: {
-            reloadCurrentProgram = .init()
-            activateSelectedPlaybackEngine()
+            tvOSFullScreenDidDismiss()
         }) {
             let _ = logger.info("Presenting full screen from floating player", private: viewModel.stream.title)
-            ZStack {
-                if useSGPlayerCompatibility, sgPlayer != nil {
-                    sgPlayerSurface(
-                        isFullScreen: true,
-                        showsControls: showTvOSFullScreenControls,
-                        fullScreenSystemImage: "xmark",
-                        fullScreenAccessibilityLabel: "Exit Full Screen"
-                    ) {
-                        showFullScreen = false
-                    }
-                    .ignoresSafeArea()
-                } else {
-                    tvOSPlayer.fullScreenView(
-                        onPlaybackError: handlePlaybackError,
-                        showsControls: showTvOSFullScreenControls
-                    )
-                }
-                tvOSFullScreenInteractionLayer()
-                if let playbackErrorMessage {
-                    playbackErrorView(playbackErrorMessage)
-                }
-            }
-            .background(Color.black.ignoresSafeArea())
-            .task(id: tvOSFullScreenControlsAutoHideID) {
-                await autoHideTvOSFullScreenControls()
-            }
-            .overlay(alignment: .topTrailing) {
-                if showTvOSFullScreenControls {
-                    tvOSFullScreenControls()
-                        .transition(.opacity)
-                }
-            }
+            tvOSFullScreenPlayer(isPresented: $showFullScreen)
         }
         .fullScreenCover(isPresented: $reselectStream, onDismiss: {
-            reloadCurrentProgram = .init()
-            activateSelectedPlaybackEngine()
+            tvOSFullScreenDidDismiss()
         }) {
             let _ = logger.info("Presenting full screen from double select", private: viewModel.stream.title)
-            ZStack {
-                if useSGPlayerCompatibility, sgPlayer != nil {
-                    sgPlayerSurface(
-                        isFullScreen: true,
-                        showsControls: showTvOSFullScreenControls,
-                        fullScreenSystemImage: "xmark",
-                        fullScreenAccessibilityLabel: "Exit Full Screen"
-                    ) {
-                        reselectStream = false
-                    }
-                    .ignoresSafeArea()
-                } else {
-                    tvOSPlayer.fullScreenView(
-                        onPlaybackError: handlePlaybackError,
-                        showsControls: showTvOSFullScreenControls
-                    )
-                }
-                tvOSFullScreenInteractionLayer()
-                if let playbackErrorMessage {
-                    playbackErrorView(playbackErrorMessage)
-                }
-            }
-            .background(Color.black.ignoresSafeArea())
-            .task(id: tvOSFullScreenControlsAutoHideID) {
-                await autoHideTvOSFullScreenControls()
-            }
-            .overlay(alignment: .topTrailing) {
-                if showTvOSFullScreenControls {
-                    tvOSFullScreenControls()
-                        .transition(.opacity)
-                }
-            }
+            tvOSFullScreenPlayer(isPresented: $reselectStream)
+        }
+        .onPlayPauseCommand {
+            guard !showFullScreen, !reselectStream else { return }
+            toggleTVOSPlayback()
         }
         .onChange(of: focusedStream) {
             if let focusedStream {
@@ -302,7 +253,7 @@ struct StreamView: View {
     private func tvOSPlaybackEngineButton(resetsFullScreenControls: Bool = false) -> some View {
         Button {
             if resetsFullScreenControls {
-                revealTvOSFullScreenControls()
+                revealTvOSFullScreenControls(focusing: .playbackEngine)
             }
             togglePlaybackEngine()
         } label: {
@@ -316,22 +267,136 @@ struct StreamView: View {
         .accessibilityLabel(Text("Use \(targetPlaybackEngineName)"))
     }
 
-    private func tvOSFullScreenControls() -> some View {
-        HStack(spacing: 12) {
-            tvOSPlaybackEngineButton(resetsFullScreenControls: true)
-            Button {
-                revealTvOSFullScreenControls()
-                presentMediaInfo()
-            } label: {
-                Image(systemName: "info.circle")
+    @ViewBuilder
+    private func tvOSFullScreenPlayer(isPresented: Binding<Bool>) -> some View {
+        if useSGPlayerCompatibility, sgPlayer != nil {
+            ZStack {
+                sgPlayerSurface(
+                    isFullScreen: true,
+                    showsControls: false
+                )
+                .ignoresSafeArea()
+
+                tvOSFullScreenInteractionLayer()
+
+                if showTvOSFullScreenControls {
+                    tvOSFullScreenControls(isPresented: isPresented)
+                        .transition(.opacity)
+                }
+
+                if let playbackErrorMessage {
+                    playbackErrorView(playbackErrorMessage)
+                }
             }
-            .accessibilityIdentifier("stream-info")
-            .accessibilityLabel("Stream Info")
+            .background(Color.black.ignoresSafeArea())
+            .accessibilityIdentifier("stream-player-full-screen")
+            .onAppear {
+                revealTvOSFullScreenControls(focusing: .playPause)
+            }
+            .onPlayPauseCommand {
+                toggleTVOSPlayback()
+                revealTvOSFullScreenControls(focusing: .playPause)
+            }
+            .onExitCommand {
+                isPresented.wrappedValue = false
+            }
+            .onChange(of: tvOSPlaybackFocus) { _, focus in
+                guard showTvOSFullScreenControls,
+                      focus != nil,
+                      focus != .hiddenInteractionSurface else { return }
+                tvOSFullScreenControlsAutoHideID = UUID()
+            }
+            .task(id: tvOSFullScreenControlsAutoHideID) {
+                await autoHideTvOSFullScreenControls()
+            }
+        } else {
+            ZStack {
+                // AVPlayerViewController owns the complete tvOS transport UI.
+                // Keeping custom SwiftUI gesture/focus layers out of this branch
+                // preserves Siri Remote scrubbing, Play/Pause, voice commands,
+                // subtitles, audio tracks, and future system-player behavior.
+                tvOSPlayer.fullScreenView(onPlaybackError: handlePlaybackError)
+
+                if let playbackErrorMessage {
+                    playbackErrorView(playbackErrorMessage)
+                }
+            }
+            .background(Color.black.ignoresSafeArea())
+            .accessibilityIdentifier("stream-player-full-screen")
+            .onExitCommand {
+                isPresented.wrappedValue = false
+            }
+        }
+    }
+
+    private func tvOSFullScreenControls(isPresented: Binding<Bool>) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(viewModel.title)
+                        .font(.title2.bold())
+                    Text(currentPlaybackEngineName)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    isPresented.wrappedValue = false
+                } label: {
+                    Label("Exit Full Screen", systemImage: "xmark")
+                }
+                .focused($tvOSPlaybackFocus, equals: .exitFullScreen)
+                .accessibilityIdentifier("stream-exit-full-screen")
+            }
+
+            Spacer()
+
+            HStack(spacing: 20) {
+                Button {
+                    toggleTVOSPlayback()
+                    revealTvOSFullScreenControls(focusing: .playPause)
+                } label: {
+                    Label(
+                        isSGPlayerPlaying ? "Pause" : "Play",
+                        systemImage: isSGPlayerPlaying ? "pause.fill" : "play.fill"
+                    )
+                }
+                .buttonStyle(.glassProminent)
+                .focused($tvOSPlaybackFocus, equals: .playPause)
+                .accessibilityIdentifier("stream-play-pause")
+
+                Spacer()
+
+                tvOSPlaybackEngineButton(resetsFullScreenControls: true)
+                    .focused($tvOSPlaybackFocus, equals: .playbackEngine)
+
+                Button {
+                    revealTvOSFullScreenControls(focusing: .streamInfo)
+                    presentMediaInfo()
+                } label: {
+                    Label("Stream Info", systemImage: "info.circle")
+                }
+                .focused($tvOSPlaybackFocus, equals: .streamInfo)
+                .accessibilityIdentifier("stream-info")
+            }
         }
         .font(.headline)
         .controlSize(.large)
-        .padding(.top, 48)
-        .padding(.trailing, 56)
+        .buttonStyle(.glass)
+        .padding(.horizontal, 72)
+        .padding(.vertical, 56)
+        .background(alignment: .bottom) {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.82)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 340)
+            .ignoresSafeArea()
+        }
+        .accessibilityIdentifier("stream-player-controls")
     }
 
     private func tvOSFullScreenInteractionLayer() -> some View {
@@ -340,45 +405,70 @@ struct StreamView: View {
             .contentShape(Rectangle())
             .allowsHitTesting(!showTvOSFullScreenControls)
             .focusable(!showTvOSFullScreenControls)
-            .focused($tvOSFullScreenInteractionFocused)
+            .focused($tvOSPlaybackFocus, equals: .hiddenInteractionSurface)
             .onTapGesture {
-                revealTvOSFullScreenControls()
+                revealTvOSFullScreenControls(focusing: .playPause)
             }
             .onMoveCommand { _ in
-                revealTvOSFullScreenControls()
-            }
-            .onPlayPauseCommand {
-                revealTvOSFullScreenControls()
+                revealTvOSFullScreenControls(focusing: .playPause)
             }
     }
 
-    private func revealTvOSFullScreenControls() {
-        tvOSFullScreenInteractionFocused = false
+    private func revealTvOSFullScreenControls(focusing focus: TVOSPlaybackFocus? = nil) {
         withAnimation(.easeIn(duration: 0.2)) {
             showTvOSFullScreenControls = true
         }
         tvOSFullScreenControlsAutoHideID = UUID()
+
+        guard let focus else { return }
+        Task { @MainActor in
+            // Wait until the conditional controls have entered the focus tree.
+            await Task.yield()
+            tvOSPlaybackFocus = focus
+        }
     }
 
     private func autoHideTvOSFullScreenControls() async {
-        await MainActor.run {
-            showTvOSFullScreenControls = true
-            tvOSFullScreenInteractionFocused = false
-        }
-
         do {
-            try await Task.sleep(for: .seconds(3))
+            try await Task.sleep(for: .seconds(5))
         } catch {
             return
         }
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, isSGPlayerPlaying else { return }
         await MainActor.run {
             withAnimation(.easeOut(duration: 0.2)) {
                 showTvOSFullScreenControls = false
             }
-            tvOSFullScreenInteractionFocused = true
         }
+
+        // Transfer focus only after the hidden interaction surface has become
+        // focusable, otherwise the focus engine can briefly lose its target.
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            tvOSPlaybackFocus = .hiddenInteractionSurface
+        }
+    }
+
+    private func toggleTVOSPlayback() {
+        if useSGPlayerCompatibility {
+            if sgPlayer?.isPlaying ?? isSGPlayerPlaying {
+                sgPlayer?.pause()
+                isSGPlayerPlaying = false
+            } else {
+                sgPlayer?.play()
+                isSGPlayerPlaying = true
+            }
+        } else {
+            tvOSPlayer.togglePlayback()
+        }
+    }
+
+    private func tvOSFullScreenDidDismiss() {
+        reloadCurrentProgram = .init()
+        showTvOSFullScreenControls = true
+        tvOSPlaybackFocus = .inlinePlayer
     }
 #endif
     private func presentMediaInfo() {
@@ -448,20 +538,36 @@ struct StreamView: View {
             .id(playbackReloadID)
         }
 #elseif os(tvOS)
-        HStack(spacing: 0) {
-            if useSGPlayerCompatibility {
-                sgPlayerSurface(widthMultiplier: homeTvOSStreamLayout ? 1 : 2.8 / 3.0) {
-                    showFullScreen = true
-                }
-            } else {
-                Button {
-                    showFullScreen = true
-                } label: {
+        Button {
+            showFullScreen = true
+        } label: {
+            ZStack(alignment: .bottomTrailing) {
+                if useSGPlayerCompatibility {
+                    // The inline surface is a single tvOS content card. Tiny
+                    // transport buttons inside the card created a nested focus
+                    // hierarchy and made entering full screen unpredictable.
+                    sgPlayerSurface(
+                        widthMultiplier: homeTvOSStreamLayout ? 1 : 2.8 / 3.0,
+                        showsControls: false
+                    )
+                } else {
+                    // Compact AVKit playback is deliberately non-interactive;
+                    // Select opens the native full-screen system player.
                     tvOSPlayer.compactView(onPlaybackError: handlePlaybackError)
                 }
-                .buttonStyle(.card)
+
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.headline)
+                    .padding(16)
+                    .glassEffect(.regular, in: .circle)
+                    .padding(22)
             }
         }
+        .buttonStyle(.card)
+        .focused($tvOSPlaybackFocus, equals: .inlinePlayer)
+        .accessibilityIdentifier("stream-player-card")
+        .accessibilityLabel(Text("Enter Full Screen"))
+        .accessibilityHint(Text("Press Play/Pause to control playback without opening full screen."))
         .ignoresSafeArea()
 #else
         if useSGPlayerCompatibility {
@@ -1375,11 +1481,18 @@ private struct TvOSPlayerView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        uiViewController.showsPlaybackControls = showsPlaybackControls
+        if uiViewController.player !== player {
+            uiViewController.player = player
+        }
+        // `showsPlaybackControls` is intentionally fixed for the lifetime of
+        // each controller. AVKit warns against creating/destroying its tvOS
+        // controls while the controller is already onscreen.
     }
 
     static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
-        uiViewController.player?.pause()
+        // Playback intent belongs to StreamView. The same AVPlayer moves
+        // between compact and full-screen controllers, so dismantling one
+        // presentation must not pause the shared stream.
         uiViewController.player = nil
     }
 
@@ -1404,15 +1517,15 @@ private final class TvOSPlayer {
         // (at least once a minute via the TimelineView) and silently undo a
         // user-initiated pause.
         controller.setPlaybackErrorHandler(onPlaybackError)
-        return TvOSPlayerView(player: controller.player, compact: true, showsPlaybackControls: true)
+        return TvOSPlayerView(player: controller.player, compact: true, showsPlaybackControls: false)
     }
 
-    func fullScreenView(onPlaybackError: @escaping (String?) -> Void, showsControls: Bool) -> some View {
+    func fullScreenView(onPlaybackError: @escaping (String?) -> Void) -> some View {
         controller.setPlaybackErrorHandler(onPlaybackError)
         return TvOSPlayerView(
             player: controller.player,
             compact: false,
-            showsPlaybackControls: showsControls
+            showsPlaybackControls: true
         )
             .ignoresSafeArea()
     }
@@ -1431,6 +1544,14 @@ private final class TvOSPlayer {
 
     func play() {
         controller.play()
+    }
+
+    func togglePlayback() {
+        if controller.player.timeControlStatus == .paused {
+            controller.play()
+        } else {
+            controller.pause()
+        }
     }
 }
 #else
