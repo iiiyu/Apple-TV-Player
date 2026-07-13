@@ -1,0 +1,27 @@
+Hello App Review Team,
+
+Thank you for the additional guidance. We addressed both issues in a new macOS binary and updated the metadata.
+
+Guideline 5.2.5
+- We removed “iCloud” from the app subtitle in every localization.
+- The en-US subtitle is now “M3U IPTV Playlist Player.”
+- No Apple product or service name remains in any localized subtitle.
+
+Guideline 2.4.5(i)
+- We removed the com.apple.security.temporary-exception.mach-lookup.global-name entitlement and its com.apple.audioanalyticsd value.
+- The app remains sandboxed and now uses only standard App Sandbox capabilities required for its core functionality.
+- We verified the entitlements in the exported App Store package, not only the Xcode project settings. The exported package contains no temporary-exception, mach-lookup, or audioanalyticsd entitlement.
+
+The corrected macOS build is version 1.0, build 11. It has been uploaded, finished processing successfully, and is selected for this App Store version.
+
+No login is required. To test playback:
+1. Launch Hi IPTV Player.
+2. Choose Add Playlist.
+3. Enter “App Review” as the name.
+4. Enter this playlist URL:
+   https://raw.githubusercontent.com/iiiyu/Apple-TV-Player/master/docs/review.m3u
+5. Save the playlist, open it, select “Apple HLS Sample,” and start playback.
+
+The app does not provide, host, sell, or include channels, media, playlists, or an IPTV service. It plays only sources added by the user. The review playlist points to Apple’s public HLS sample stream.
+
+Please review macOS build 11. Thank you.
