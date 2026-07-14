@@ -99,6 +99,8 @@ struct ContentView: View {
                 .ignoresSafeArea()
             PlaylistAddView()
         }
+        .environment(\.colorScheme, .dark)
+        .preferredColorScheme(.dark)
 #else
         PlaylistAddView()
 #endif

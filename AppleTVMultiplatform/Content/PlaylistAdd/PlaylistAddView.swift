@@ -7,7 +7,16 @@ struct PlaylistAddView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = PlaylistAddViewModel()
     @State private var task: Task<Void, Error>?
-    @FocusState private var isTextFieldFocused: Bool
+    @FocusState private var focusedField: PlaylistField?
+
+    private enum PlaylistField: Hashable {
+        case url
+        case name
+        case passcode
+        case tvgLogo
+        case urlTvg
+        case urlImg
+    }
 
     var body: some View {
         VStack {
@@ -15,25 +24,24 @@ struct PlaylistAddView: View {
                 Section("Playlist") {
                     HStack {
                         Text(verbatim: "URL")
-                        textField("Required", text: $viewModel.urlString)
+                        textField("Required", text: $viewModel.urlString, field: .url)
                             .modifier(KeyboardURLTypeModifier())
-                            .focused($isTextFieldFocused)
                             .onAppear {
                                 if ProcessInfo.processInfo.isPreview || ProcessInfo.processInfo.isRunningUITests {
                                     return
                                 }
-                                isTextFieldFocused = true
+                                focusedField = .url
                             }
                             .accessibilityIdentifier("url")
                     }
                     HStack {
                         Text("Name")
-                        textField("Optional", text: $viewModel.name)
+                        textField("Optional", text: $viewModel.name, field: .name)
                             .accessibilityIdentifier("name")
                     }
                     HStack {
                         Text("Passcode")
-                        textField("Optional", text: $viewModel.pin)
+                        textField("Optional", text: $viewModel.pin, field: .passcode)
                             .accessibilityIdentifier("passcode")
                     }
                 }
@@ -41,19 +49,19 @@ struct PlaylistAddView: View {
                 Section("Tags") {
                     HStack {
                         Text(verbatim: "tvg-logo")
-                        textField("Optional", text: $viewModel.tvgLogo)
+                        textField("Optional", text: $viewModel.tvgLogo, field: .tvgLogo)
                             .modifier(KeyboardURLTypeModifier())
                             .accessibilityIdentifier("tvg-logo")
                     }
                     HStack {
                         Text(verbatim: "url-tvg")
-                        textField("Optional", text: $viewModel.urlTvg)
+                        textField("Optional", text: $viewModel.urlTvg, field: .urlTvg)
                             .modifier(KeyboardURLTypeModifier())
                             .accessibilityIdentifier("url-tvg")
                     }
                     HStack {
                         Text(verbatim: "url-img")
-                        textField("Optional", text: $viewModel.urlImg)
+                        textField("Optional", text: $viewModel.urlImg, field: .urlImg)
                             .modifier(KeyboardURLTypeModifier())
                             .accessibilityIdentifier("url-img")
                     }
@@ -96,6 +104,10 @@ struct PlaylistAddView: View {
         .padding(44)
         .containerRelativeFrame(.vertical) { length, _ in length * 0.85 }
         .containerRelativeFrame(.horizontal) { length, _ in length / 2.5 }
+        .foregroundStyle(.primary)
+        .background(Color.black.ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .preferredColorScheme(.dark)
 #elseif os(macOS)
         .padding()
         .frame(minHeight: 344)
@@ -135,13 +147,30 @@ struct PlaylistAddView: View {
             .disabled(!viewModel.canAdd)
     }
 
-    func textField(_ titleKey: LocalizedStringKey, text: Binding<String>) -> some View {
-        TextField(titleKey, text: text)
+    private func textField(
+        _ titleKey: LocalizedStringKey,
+        text: Binding<String>,
+        field: PlaylistField
+    ) -> some View {
+#if os(tvOS)
+        let isFocused = focusedField == field
+        return TextField(
+            titleKey,
+            text: text,
+            prompt: Text(titleKey)
+                .foregroundStyle(isFocused ? Color.black.opacity(0.55) : Color.white.opacity(0.78))
+        )
+            .focused($focusedField, equals: field)
+            .autocorrectionDisabled()
+#else
+        return TextField(titleKey, text: text)
+            .focused($focusedField, equals: field)
             .autocorrectionDisabled()
 #if os(iOS)
             .textFieldStyle(.plain)
 #elseif os(macOS)
             .textFieldStyle(.roundedBorder)
+#endif
 #endif
     }
 
