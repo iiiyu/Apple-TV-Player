@@ -1,25 +1,28 @@
 
 # HiPlayer
 
-HiPlayer is a fast, private, and simple Apple TV app for watching your own M3U playlists.
+HiPlayer is a fast, private, and simple IPTV player for iPhone, iPad, Mac, and Apple TV. Add your own M3U/M3U8 playlist, browse its channels, and watch streams from your Apple devices.
+
+[Get HiPlayer on the App Store](https://apps.apple.com/us/app/hi-iptv-player/id6780068053)
 
 > HiPlayer is based on [Apple-TV-Player](https://github.com/mikehouse/Apple-TV-Player)
 > by **Mikhail Demidov**, used under the [MIT License](LICENSE.txt).
 > Huge thanks to Mikhail for building and open-sourcing the original project. ❤️
 
 Features:
-- Built for Apple TV and the Siri Remote
-- Supports M3U and M3U8 playlists
-- Supports EPG
-- Uses SGPlayer as the preferred playback engine with AVPlayer as a fallback
-- Clean full-screen playback that hides controls after inactivity
-- Protect playlists with a PIN for extra privacy
-- Saved playlists and app data stay on your device and are never sent to our servers (actually we do not have servers at all)
-- Free
-- No account or registration required
-- No ads, no tracking
-- Open source (this repo contains the all application source code)
-- 15 languages supported (ar, de, es, fr, hi, id, it, ja, ko, pt-BR, ru, th, tr, vi, zh-Hans)
+- One app for iPhone, iPad, Mac, and Apple TV
+- Add remote M3U/M3U8 playlists with optional names, logos, EPG URLs, and image URLs
+- Parse channel metadata, groups, logos, stream headers, and multiple playlist entries
+- Browse channels by category, search on iPhone, iPad, and Mac, and mark channels as favorites
+- Refresh playlists and program guides from their source URLs
+- View current and scheduled program information when an EPG is available
+- Use SGPlayer when available, with AVPlayer as a fallback and an in-app engine switch
+- Full-screen playback with platform-specific controls, including Siri Remote support on Apple TV
+- Protect playlists and playlist settings with an optional PIN
+- Sync playlist records through Apple's private CloudKit container when available, with local storage fallback
+- Free, with no ads, tracking, or HiPlayer account
+- Localized user interface
+- Open source (the application source code is in this repository; large SGPlayer binaries are supplied separately)
 
 
 ‼️ **Important:**
@@ -27,6 +30,10 @@ Features:
 HiPlayer does not provide, host, sell, or include any channels, media, or playlists. The app only plays content added by the user, and you are responsible for having the rights to access that content.
 
 ----
+
+## Supported Platforms
+
+The project currently targets iOS, iPadOS, macOS, and tvOS 26.0 or later. The same SwiftUI codebase provides device-specific navigation and playback experiences for touch devices, Mac, and Apple TV.
 
 ## Apple TV
 <img src="/docs/tvos-dark.webp" alt="HiPlayer playlist picker on Apple TV" width="1800" height="1013">
@@ -47,7 +54,7 @@ HiPlayer does not provide, host, sell, or include any channels, media, or playli
 # For Developers
 
 - Xcode 26.5+
-- Swift 6.2+
+- Swift 6.0
 - SwiftPM
 - `asc` CLI for App Store Connect release work
 - For now there is no CI/CD pipeline
@@ -55,6 +62,8 @@ HiPlayer does not provide, host, sell, or include any channels, media, or playli
 ## Local Binary Dependencies
 
 HiPlayer can use SGPlayer as the preferred playback engine with AVPlayer as a fallback. The compiled SGPlayer frameworks are local binary artifacts and are not committed to this repository because they are too large for normal GitHub storage. See [vendor/README.md](vendor/README.md) for the expected local framework paths.
+
+Playlist sources and stream data are fetched directly from the URLs supplied by the user. HiPlayer does not provide, host, sell, or include channels or playlists, and it has no HiPlayer backend. Playlist records use Apple's private CloudKit container when available and otherwise remain in local app storage.
 
 ## App Signing
 
